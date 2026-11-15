@@ -1,0 +1,16 @@
+.env
+admin-password.txt
+data
+backups
+.git
+.venv
+__pycache__
+tests
+artifacts
+.qa-deps
+.venv
+*.conf
+state.sqlite3*
+**/__pycache__
+
+library

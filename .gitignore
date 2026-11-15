@@ -1,0 +1,16 @@
+# Runtime and personal data must never be published.
+.env
+*.conf
+*.sqlite3*
+data/
+library/
+backups/
+artifacts/
+.qa-deps/
+.venv/
+__pycache__/
+*.pyc
+account-setup-code
+admin-password.txt
+.DS_Store
+Thumbs.db
