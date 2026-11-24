@@ -167,7 +167,7 @@ To restore computer-only access, set `APP_BIND_IP=127.0.0.1` in `.env` and run `
 
 ## Update from Kindle Sync
 
-Starting with v1.2.0, releases can be installed from **More → Kindle Sync updates**. Use the launcher included in the release ZIP or TAR.GZ on Linux, macOS or Windows (64-bit Intel/AMD or ARM). It starts the local update helper along with the app. After a computer restart, run the launcher again if Docker has already restarted the containers and the update panel reports that the helper is offline.
+Starting with v1.2.1, releases can be installed from **More → Kindle Sync updates**. Use the launcher included in the release ZIP or TAR.GZ on Linux, macOS or Windows (64-bit Intel/AMD or ARM). It starts the local update helper along with the app. After a computer restart, run the launcher again if Docker has already restarted the containers and the update panel reports that the helper is offline.
 
 1. Open **More → Kindle Sync updates** with the first local account. The app shows the installed version and the latest available version. Choose **Check for updates** to refresh the result.
 2. Choose **Install update** and confirm. Kindle Sync downloads the official archive from GitHub, checks its SHA-256 digest and builds the new image. When the image is ready, the app and worker restart. Books, accounts, mail settings and the existing `.env` stay in your installation folder.
@@ -175,7 +175,7 @@ Starting with v1.2.0, releases can be installed from **More → Kindle Sync upda
 
 An update needs free disk space and enough time for Docker to build the release. Keep using the launcher to apply configuration changes to an updated installation. The update helper runs on the host without adding a Docker socket to the app. It sends requests for public release information and archives to GitHub and keeps its working files under `.kindle-updater/`.
 
-If you are upgrading from v1.1.0 or earlier, first install v1.2.0 using the manual steps below. Installations using a custom `COMPOSE_FILE` can use the manual update steps with their own Compose setup.
+If you are upgrading from v1.1.0 or earlier, first install v1.2.1 using the manual steps below. Installations using a custom `COMPOSE_FILE` can use the manual update steps with their own Compose setup.
 
 ## Operation, updates and backups
 

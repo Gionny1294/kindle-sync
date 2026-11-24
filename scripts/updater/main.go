@@ -440,7 +440,12 @@ func run() error {
 		command.Stdout, command.Stderr = os.Stdout, os.Stderr
 		return command.Run()
 	}
-	if err := os.MkdirAll(filepath.Join(u.state, "status"), 0755); err != nil {
+	statusDirectory := filepath.Join(u.state, "status")
+	if err := os.MkdirAll(statusDirectory, 0755); err != nil {
+		return err
+	}
+	// The web container mounts this directory directly as an unprivileged user.
+	if err := os.Chmod(statusDirectory, 0755); err != nil {
 		return err
 	}
 	switch os.Args[1] {

@@ -222,7 +222,7 @@ func unpack(archivePath, destination, version string) error {
 			return err
 		}
 		_, copyErr := io.Copy(file, reader)
-		if err := errors.Join(copyErr, file.Close()); err != nil {
+		if err := errors.Join(copyErr, file.Chmod(mode), file.Close()); err != nil {
 			return err
 		}
 	}
@@ -235,5 +235,11 @@ func unpack(archivePath, destination, version string) error {
 	if err != nil || actual != version {
 		return errors.New("archive version does not match its release")
 	}
-	return nil
+	// Compose copies these permissions into the image, whose app user is not root.
+	return filepath.WalkDir(destination, func(name string, entry fs.DirEntry, err error) error {
+		if err == nil && entry.IsDir() {
+			return os.Chmod(name, 0755)
+		}
+		return err
+	})
 }
