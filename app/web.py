@@ -18,14 +18,14 @@ from app.covers import thumbnail
 from app import reader
 from app import i18n
 from app import accounts
-from app import recommendations, telegram_books
+from app import recommendations, telegram_books, updates
 
 os.umask(0o077)
 c.init()
 accounts.init()
 app=Flask(__name__)
 ASSET_VERSION=hashlib.sha256(b''.join(path.read_bytes() for path in
-    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','style.css']]+
+    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','updates.js','style.css']]+
     sorted((Path(app.static_folder)/'locales').glob('*.json')))).hexdigest()[:12]
 app.config.update(MAX_CONTENT_LENGTH=46*1024*1024,MAX_FORM_MEMORY_SIZE=128*1024,MAX_FORM_PARTS=12)
 
@@ -112,6 +112,18 @@ def health():
     with contextlib.closing(c.connect()) as db:
         db.execute('SELECT 1').fetchone()
     return jsonify(status='ok')
+
+
+@app.get('/api/updates')
+def update_status():
+    return jsonify(updates.status(g.account['id']))
+
+
+@app.post('/api/updates')
+def update_request():
+    if not updates.can_manage(g.account['id']):
+        return fail('Solo il primo account può gestire gli aggiornamenti.',403)
+    return jsonify(updates.enqueue(request.get_json())),202
 
 
 @app.get('/api/session')

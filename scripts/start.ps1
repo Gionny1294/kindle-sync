@@ -21,7 +21,14 @@ try {
         [System.IO.File]::WriteAllText((Join-Path $PWD '.env'), ($lines -join "`n") + "`n", $utf8)
     }
     Write-Host 'Starting Kindle Sync. The first build downloads dependencies and may take several minutes.'
-    & docker compose up -d --build --wait --wait-timeout 240
+    $hostArch = $env:PROCESSOR_ARCHITEW6432
+    if (-not $hostArch) { $hostArch = $env:PROCESSOR_ARCHITECTURE }
+    $updater = Join-Path $PSScriptRoot ("updater/bin/kindle-updater-windows-{0}.exe" -f $hostArch.ToLowerInvariant())
+    if (Test-Path -LiteralPath $updater -PathType Leaf) {
+        & $updater start
+    } else {
+        & docker compose up -d --build --wait --wait-timeout 240
+    }
     if ($LASTEXITCODE -ne 0) {
         throw 'Startup failed. Check Docker, the internet connection and port conflicts. Run: docker compose logs --tail=50 app worker. Existing data has been kept.'
     }

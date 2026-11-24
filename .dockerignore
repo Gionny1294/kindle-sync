@@ -14,3 +14,5 @@ state.sqlite3*
 **/__pycache__
 
 library
+.kindle-updater
+scripts/updater/bin

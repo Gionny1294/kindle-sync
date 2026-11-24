@@ -14,3 +14,5 @@ account-setup-code
 admin-password.txt
 .DS_Store
 Thumbs.db
+.kindle-updater/
+scripts/updater/bin/

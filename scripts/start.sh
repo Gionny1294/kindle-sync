@@ -53,7 +53,17 @@ if [ "$(id -u)" -eq 0 ]; then
   chown "$configured_uid:$configured_gid" data library library/Singoli
 fi
 printf 'Starting Kindle Sync. The first build downloads dependencies and may take several minutes.\n'
-if ! docker compose up -d --build --wait --wait-timeout 240; then
+case "$(uname -s)" in Linux) updater_os=linux ;; Darwin) updater_os=darwin ;; *) updater_os=unsupported ;; esac
+case "$(uname -m)" in x86_64|amd64) updater_arch=amd64 ;; arm64|aarch64) updater_arch=arm64 ;; *) updater_arch=unsupported ;; esac
+updater="$root/scripts/updater/bin/kindle-updater-$updater_os-$updater_arch"
+start_services() {
+  if [ -x "$updater" ]; then
+    "$updater" start
+  else
+    docker compose up -d --build --wait --wait-timeout 240
+  fi
+}
+if ! start_services; then
   printf '\nStartup failed. Check Docker, your internet connection and whether the port is already in use.\nRun: docker compose logs --tail=50 app worker\nYour existing data has been kept.\n' >&2
   exit 1
 fi

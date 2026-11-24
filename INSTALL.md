@@ -6,7 +6,7 @@ Search and read your books in a browser, send individual titles to your Kindle, 
 
 **Six interface languages:** 🇬🇧 English · 🇫🇷 Français · 🇪🇸 Español · 🇮🇹 Italiano · 🇨🇳 中文（简体 / Simplified Chinese） · 🇷🇺 Русский. Choose a flag on first opening and change later in **More → Language**. Books keep their original language.
 
-[Install](#quick-installation) · [Gmail setup](#google--gmail-setup) · [Privacy](#privacy-and-network-connections) · [Troubleshooting](#troubleshooting)
+[Install](#quick-installation) · [Updates](#update-from-kindle-sync) · [Gmail setup](#google--gmail-setup) · [Privacy](#privacy-and-network-connections) · [Troubleshooting](#troubleshooting)
 
 ## Quick installation
 
@@ -136,6 +136,7 @@ Recommendation sources, caches and Telegram credentials/session keys are stored 
 | Verify email settings | Your chosen SMTP provider receives a TLS-authenticated connection; no book is sent by this test. |
 | Send manually or enable automatic sending | Documents, sender and recipient go through your email provider to Amazon's Send to Kindle service under their policies. |
 | Install or rebuild | Docker downloads runtime packages and dependencies from registries. |
+| Check for or install an app update | The host requests the public release metadata and archive from GitHub. |
 | Load recommendations | The host fetches public book pages and cover images from the enabled sources. No local library or SMTP data is sent. |
 | Connect Telegram / download a book | Telegram receives authentication requests and the chosen title/author sent to your configured bot. The selected file is downloaded to the host. |
 | Open a help link | Your browser visits that external website. |
@@ -164,6 +165,18 @@ Open `http://YOUR-COMPUTER-IP:1997` on the other device. Find the private IP in 
 
 To restore computer-only access, set `APP_BIND_IP=127.0.0.1` in `.env` and run `docker compose up -d --wait`. A browser shortcut/add-to-home-screen can open the app on a phone; it still needs the host.
 
+## Update from Kindle Sync
+
+Starting with v1.2.0, releases can be installed from **More → Kindle Sync updates**. Use the launcher included in the release ZIP or TAR.GZ on Linux, macOS or Windows (64-bit Intel/AMD or ARM). It starts the local update helper along with the app. After a computer restart, run the launcher again if Docker has already restarted the containers and the update panel reports that the helper is offline.
+
+1. Open **More → Kindle Sync updates** with the first local account. The app shows the installed version and the latest available version. Choose **Check for updates** to refresh the result.
+2. Choose **Install update** and confirm. Kindle Sync downloads the official archive from GitHub, checks its SHA-256 digest and builds the new image. When the image is ready, the app and worker restart. Books, accounts, mail settings and the existing `.env` stay in your installation folder.
+3. Leave Docker running during the update. The page reconnects after restart. If the new services fail to start, the helper tries to restore the previous version. If Docker was shut down before recovery finished, restart Docker and run the launcher.
+
+An update needs free disk space and enough time for Docker to build the release. Keep using the launcher to apply configuration changes to an updated installation. The update helper runs on the host without adding a Docker socket to the app. It sends requests for public release information and archives to GitHub and keeps its working files under `.kindle-updater/`.
+
+If you are upgrading from v1.1.0 or earlier, first install v1.2.0 using the manual steps below. Installations using a custom `COMPOSE_FILE` can use the manual update steps with their own Compose setup.
+
 ## Operation, updates and backups
 
 From the installation folder:
@@ -177,7 +190,7 @@ docker compose start                     # Restart
 
 **Back up:** stop both containers, copy **all of `data/`, `.env` and `library/`** to a private location, then start them. Backups contain books and email credentials. Rebuilding containers or `docker compose down` keeps these bind-mounted folders.
 
-**Update:** back up first. Extract the new release separately, then copy its application files into your existing installation, preserving `data/`, `library/` and `.env`. Run the launcher to rebuild. Never replace your data with an empty folder.
+**Manual update:** back up first. Extract the new release separately, then copy its application files into your existing installation, preserving `data/`, `library/` and `.env`. Run the launcher to rebuild. Never replace your data with an empty folder.
 
 **Uninstall:** run `docker compose down`. Delete the installation folder only if you intend to delete its books, accounts and settings. Revoke the email app password if no longer needed. Remove the Docker image through Docker Desktop if desired.
 

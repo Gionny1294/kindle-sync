@@ -6,7 +6,7 @@ ARG APP_GID=1000
 WORKDIR /opt/kindle
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && (getent group ${APP_GID} >/dev/null || groupadd -g ${APP_GID} kindle) && (getent passwd ${APP_UID} >/dev/null || useradd -u ${APP_UID} -g ${APP_GID} -M kindle)
-COPY --chmod=644 kindle-sync.py ./
+COPY --chmod=644 kindle-sync.py VERSION ./
 COPY app ./app
 USER ${APP_UID}:${APP_GID}
 CMD ["gunicorn", "--bind", "0.0.0.0:1997", "--workers", "1", "--threads", "4", "--timeout", "180", "--access-logfile", "/dev/null", "app.web:app"]
