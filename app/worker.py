@@ -28,8 +28,10 @@ def error_message(exc):
         return 'Destinatario rifiutato dal server SMTP. Controlla l’indirizzo Kindle.'
     if isinstance(exc, (smtplib.SMTPSenderRefused, smtplib.SMTPDataError)):
         return 'Messaggio rifiutato dal server SMTP. Controlla dimensione e autorizzazioni.'
-    if isinstance(exc, ssl.SSLError):
+    if isinstance(exc, ssl.SSLCertVerificationError):
         return 'Connessione TLS non verificata. Controlla server e certificato.'
+    if isinstance(exc, ssl.SSLError):
+        return 'Connessione TLS interrotta. Controlla l’esito prima di riprovare.'
     if isinstance(exc, (ConnectionRefusedError, socket.gaierror, smtplib.SMTPConnectError)):
         return 'Server SMTP non raggiungibile. Controlla rete, server e porta.'
     if isinstance(exc, ValueError):
@@ -138,7 +140,7 @@ def run_one():
                 db.execute("UPDATE jobs SET status='accepted',finished=?,detail=? WHERE id=?",(time.time(),'Accettato dal server SMTP. La consegna al Kindle richiede verifica sul dispositivo.',job['id']))
                 c.event(db,'Un documento è stato accettato dal server SMTP.')
         except Exception as exc:
-            definite=isinstance(exc,(ValueError,smtplib.SMTPAuthenticationError,smtplib.SMTPRecipientsRefused,smtplib.SMTPSenderRefused,smtplib.SMTPDataError,smtplib.SMTPConnectError,socket.gaierror,ConnectionRefusedError,ssl.SSLError))
+            definite=isinstance(exc,(ValueError,smtplib.SMTPAuthenticationError,smtplib.SMTPRecipientsRefused,smtplib.SMTPSenderRefused,smtplib.SMTPDataError,smtplib.SMTPConnectError,socket.gaierror,ConnectionRefusedError,ssl.SSLCertVerificationError))
             status='failed' if not attempted or definite else 'uncertain'
             detail=error_message(exc)
             with c.transaction() as db:
@@ -211,7 +213,9 @@ def schedule_tick():
 
 def all_accounts():
     profiles=accounts.profiles()
-    return profiles if profiles else [None]
+    with contextlib.closing(accounts.connect()) as db:
+        claimed=db.execute("SELECT 1 FROM installation WHERE key='legacy_claimed'").fetchone()
+    return profiles if profiles or claimed else [None]
 
 
 def heartbeats():
@@ -219,7 +223,8 @@ def heartbeats():
         # The root heartbeat is also used by Docker's worker healthcheck.
         with c.use_account(None),c.transaction() as db:c.put(db,'heartbeat',time.time())
         for account in accounts.profiles():
-            with c.use_account(account):
+            with accounts.access(account) as exists:
+                if not exists:continue
                 if (c.data_dir()/'state.sqlite3').exists():
                     with c.transaction() as db:c.put(db,'heartbeat',time.time())
         for _ in range(15):
@@ -228,19 +233,21 @@ def heartbeats():
 
 
 def main():
+    from app import recommendations
     os.umask(0o077)
     c.init();accounts.init()
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
     worker_lock=(c.DATA/'worker.lock').open('a')
     fcntl.flock(worker_lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
     heartbeat=threading.Thread(target=heartbeats,daemon=True);heartbeat.start()
-    initialized=set();last_scan={}
+    initialized=set();last_scan={};last_recommendations={}
     try:
         while not STOP:
             worked=False
             for account in all_accounts():
                 if STOP:break
-                with c.use_account(account):
+                with accounts.access(account) as exists:
+                    if not exists:continue
                     key=str(c.data_dir())
                     if key not in initialized:
                         c.init();recover_inflight()
@@ -252,12 +259,16 @@ def main():
                     if time.time()-last_scan.get(key,0)>30:
                         scan();recover_uploads();last_scan[key]=time.time()
                     schedule_tick()
+                    if account and time.time()-last_recommendations.get(key,0)>30:
+                        recommendations.start_refresh(account,scheduled=True)
+                        last_recommendations[key]=time.time()
                     if run_one():worked=True
             if not worked:time.sleep(1)
     finally:
         heartbeat.join(timeout=2)
         for account in [None,*accounts.profiles()]:
-            with c.use_account(account):
+            with accounts.access(account) as exists:
+                if not exists:continue
                 with c.transaction() as db:
                     c.put(db,'heartbeat',0);c.event(db,'Worker fermato.')
 

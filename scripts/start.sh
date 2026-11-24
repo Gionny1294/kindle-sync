@@ -26,14 +26,14 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 umask 077
-mkdir -p data library
+mkdir -p data library/Singoli
 if [ ! -f .env ]; then
   app_uid=$(id -u)
   app_gid=$(id -g)
   if [ "$app_uid" -eq 0 ]; then
     app_uid=1000
     app_gid=1000
-    chown "$app_uid:$app_gid" data library
+    chown "$app_uid:$app_gid" data library library/Singoli
   fi
   bind_ip=127.0.0.1
   if "$lan"; then bind_ip=0.0.0.0; fi
@@ -50,7 +50,7 @@ if [ "$(id -u)" -eq 0 ]; then
   configured_gid=${configured_gid:-1000}
   case "$configured_uid:$configured_gid" in *[!0-9:]*|:*|*:) printf 'APP_UID and APP_GID must be numeric.\n' >&2; exit 1 ;; esac
   if [ "$configured_uid" -eq 0 ]; then printf 'Use a non-root APP_UID in .env.\n' >&2; exit 1; fi
-  chown "$configured_uid:$configured_gid" data library
+  chown "$configured_uid:$configured_gid" data library library/Singoli
 fi
 printf 'Starting Kindle Sync. The first build downloads dependencies and may take several minutes.\n'
 if ! docker compose up -d --build --wait --wait-timeout 240; then

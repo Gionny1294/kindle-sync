@@ -6,11 +6,11 @@ Search and read your books in a browser, send individual titles to your Kindle, 
 
 **Six interface languages:** 🇬🇧 English · 🇫🇷 Français · 🇪🇸 Español · 🇮🇹 Italiano · 🇨🇳 中文（简体 / Simplified Chinese） · 🇷🇺 Русский. Choose a flag on first opening and change later in **More → Language**. Books keep their original language.
 
-[Latest release](https://github.com/Gionny1294/kindle-sync/releases/latest) · [Install](#quick-installation) · [Gmail setup](#google--gmail-setup) · [Privacy](#privacy-and-network-connections) · [Troubleshooting](#troubleshooting)
+[Install](#quick-installation) · [Gmail setup](#google--gmail-setup) · [Privacy](#privacy-and-network-connections) · [Troubleshooting](#troubleshooting)
 
 ## Quick installation
 
-You only need **Docker with Docker Compose v2**. No separate Python installation, developer account or cloud hosting is required.
+You only need **Docker with Docker Compose v2**. No separate Python installation or cloud hosting is required. Telegram downloads optionally require your Telegram API credentials.
 
 1. Install and start Docker:
    - **Windows:** [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/). Complete its WSL 2 setup if prompted; use **Linux containers**.
@@ -40,7 +40,9 @@ For later visits, use the same launcher or open `http://localhost:1997` if alrea
 4. Approve your sender in Amazon, select the approval checkbox, then **Save and verify**. This checks TLS and SMTP authentication without sending a book. Leave automatic sending off unless you want it.
 5. Upload a book. **Read** opens it locally; **Send now** sends that title through email.
 
-Every opening shows the account chooser. Open an account without a password, continue with a remembered account, sign into a protected account, or create another one. Select **Remember me on this device** to stay signed in for 30 days; leave it off for a browser session limited to 12 hours. **Sign out** revokes the saved session. Use this option only on a personal device. Use **More → Switch account** or **Sign out** later. In **More → Change account password**, enter the current password if set, then save a new one. Leave the new password and confirmation empty to remove password protection: the account will then open immediately when clicked. Saving signs out existing sessions for that account. The host administrator can access underlying files; profiles are not separate operating-system security boundaries.
+A valid session reopens your account automatically and keeps the requested page or book. When signed out, choose an account without a password, sign into a protected account, or create another one. Select **Remember me on this device** to stay signed in for 30 days; leave it off for a browser session limited to 12 hours. **Sign out** revokes the saved session. Use this option only on a personal device. Use **More → Switch account** or **Sign out** later. In **More → Change account password**, enter the current password if set, then save a new one. Leave the new password and confirmation empty to remove password protection: the account will then open immediately when clicked. Saving signs out existing sessions for that account. The host administrator can access underlying files; profiles are not separate operating-system security boundaries.
+
+To delete the current account, open **More → Delete account** after signing in, enter its current password if protected, then choose **Permanently delete account**. This removes the profile, uploaded books, email credentials, settings and history, cancels pending sends and signs out its sessions on all devices. Wait for any active operation to finish before retrying. Original books in the account’s library folder remain on disk; other accounts keep their own data. A new account starts empty after the installation’s first account has been deleted. Existing backups are unchanged.
 
 ## Authorize your sender in Amazon
 
@@ -109,6 +111,20 @@ Uploads are limited to **45 MB**. Email providers can impose lower limits, inclu
 
 The first account owns the installation's `library/` folder. Put books there or upload them. Other profiles start empty and can upload private books. Administrators can list account IDs with `docker compose exec app python -m app.account_admin list`; private folders are `data/users/ACCOUNT-ID/library/`.
 
+## Recommendations and optional Telegram downloads
+
+Open **Recommended** for one consolidated list of up to **50 new releases** and **one overall top 10**, combining IBS, Feltrinelli, Mondadori and Goodreads. The overall chart combines per-provider reciprocal ranks, giving a higher consensus score to titles appearing across providers. New releases instead use the verified full publication date, newest first, excluding future releases and titles with only a year, month or unknown date. The newest 50 unique titles remain visible: a new release moves older titles down and removes the 51st from the list. Previously discovered releases are retained across scans until newer releases displace them, even if a title disappears from a source’s current feed. Repeated lists from the same provider count once per book and category. ISBNs and normalized title/author matches merge duplicate editions. Each book links to its sources and shows when the data was retrieved. Each card displays its cover, the edition’s publication date, and the available reader average with its vote count and attribution. Exact metadata is loaded from the selected book’s detail page; missing votes or dates are explicitly marked unavailable. When several sources rate a book, the rating from the source with the largest available vote count is shown, rather than mixing different audiences. The first visit starts an initial scan; subsequent scans run **Mondays at 08:00 Europe/Rome**, including daylight-saving changes, while the worker is running. A missed scan runs when the worker returns. **Refresh now** starts a manual update. If a source fails, previous results remain with their original timestamp.
+
+Manage sources per account in **More → Sources**. Enable, disable, remove or add up to 12 HTTPS sources. Supported inputs are IBS/Feltrinelli/Mondadori charts and new-release lists, Goodreads book lists, pages exposing schema.org `Book` records, and book-oriented RSS/Atom feeds. Arbitrary article pages may not provide extractable book data; the source status explains failures. Charts and sources represent their own audiences, not a universal sales ranking.
+
+**Downloads** also provides a free search by **title, author or ISBN**, including books outside Recommended. Connect Telegram through the link on the Downloads page, search for the title you want and choose a result. The results show only recognized editions in the download language, ordered with EPUB first and smaller files first. Each Download button saves the selected file in the configured downloads folder. Search text is sent only to the configured book bot; search results and download tokens belong to the signed-in app account.
+
+**Download books** is optional. **More → Download language** defaults to **Same as app language (automatic)**. You can choose Italian, English, French, Spanish, Chinese or Russian independently of the interface; the setting is saved per account and survives Telegram disconnect/reconnect. Changing the effective download language clears old results, and download tokens are bound to the language used for that search. Enter your Telegram **API ID and API hash** from [my.telegram.org/apps](https://my.telegram.org/apps), your book bot username and your international phone number in the app, then enter Telegram's login code and two-step verification password if requested. The integration uses your Telegram account to send the selected title and author to that bot. It recognizes editions explicitly identified by the bot in the chosen language, prefers **EPUB**, then chooses the **smallest file** within that preference. Only supported book files up to 45 MB are accepted; an EPUB declaring a different language from the selection is rejected. Bot response formats vary: if no compatible edition in the selected language is recognized, the app shows a message and a link to the bot. A live bot compatibility check requires your connected Telegram account.
+
+Downloads go to the host folder set by `BOOK_DOWNLOAD_HOST_PATH` in `.env` (default `./library/Singoli`), mounted at `/book-downloads` for the web app. Create a custom folder before restarting and give the app user write access. After editing `.env`, run the usual launcher to apply the setting. Existing files are preserved; identical same-named files are deduplicated and different editions get a filename suffix. Downloads appear immediately in the current account’s library. The usual automatic-send preference applies. `TELEGRAM_BOOK_BOT` can prefill the bot username. Downloaded files in this host folder are shared installation files and are preserved when an app account is deleted.
+
+Recommendation sources, caches and Telegram credentials/session keys are stored per account in the local database. Telegram secrets are never returned to the browser; protect and back up the database like SMTP credentials. Disconnect revokes the Telegram session when reachable; deleting an app account removes its local credentials and caches. Your host administrator can access this data.
+
 ## Privacy and network connections
 
 **No developer-operated cloud service, analytics, tracking or telemetry.** Books, accounts, email settings, sending history and converted copies live on the host computer. Reading, conversion and cover extraction are local. Translations, flags and PDF.js are bundled; reading needs no CDN or translation service.
@@ -120,6 +136,8 @@ The first account owns the installation's `library/` folder. Put books there or 
 | Verify email settings | Your chosen SMTP provider receives a TLS-authenticated connection; no book is sent by this test. |
 | Send manually or enable automatic sending | Documents, sender and recipient go through your email provider to Amazon's Send to Kindle service under their policies. |
 | Install or rebuild | Docker downloads runtime packages and dependencies from registries. |
+| Load recommendations | The host fetches public book pages and cover images from the enabled sources. No local library or SMTP data is sent. |
+| Connect Telegram / download a book | Telegram receives authentication requests and the chosen title/author sent to your configured bot. The selected file is downloaded to the host. |
 | Open a help link | Your browser visits that external website. |
 
 After installation, local reading works without internet while the host and containers remain running. Sending requires internet. A document leaves the computer when you choose to email it.

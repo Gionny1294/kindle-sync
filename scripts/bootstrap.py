@@ -15,16 +15,22 @@ def main():
     root=Path(__file__).resolve().parent.parent
     os.umask(0o077)
     data=root/'data';data.mkdir(exist_ok=True)
-    (root/'library').mkdir(exist_ok=True)
+    (root/'library'/'Singoli').mkdir(parents=True,exist_ok=True)
     created_ids=None
     if not (root/'.env').exists():
         uid=getattr(os,'getuid',lambda:1000)() or 1000
         gid=getattr(os,'getgid',lambda:1000)() or 1000
         created_ids=(uid,gid)
         if getattr(os,'getuid',lambda:1000)()==0:
-            os.chown(data,uid,gid);os.chown(root/'library',uid,gid)
+            os.chown(data,uid,gid);os.chown(root/'library',uid,gid);os.chown(root/'library'/'Singoli',uid,gid)
         (root/'.env').write_text(f'APP_BIND_IP={"0.0.0.0" if args.lan else "127.0.0.1"}\nAPP_PORT=1997\nAPP_UID={uid}\nAPP_GID={gid}\nLIBRARY_HOST_PATH=./library\nCOOKIE_SECURE=false\n')
         print('Created .env and private data/. Place books in library/ or upload them from the app.')
+    if getattr(os,'getuid',lambda:1000)()==0:
+        settings=dict(line.split('=',1) for line in (root/'.env').read_text().splitlines() if '=' in line and not line.lstrip().startswith('#'))
+        try:uid=int(settings.get('APP_UID','1000'));gid=int(settings.get('APP_GID','1000'))
+        except ValueError:raise SystemExit('APP_UID and APP_GID must be numeric.') from None
+        if uid<=0 or gid<0:raise SystemExit('Use a non-root APP_UID and a valid APP_GID in .env.')
+        for directory in [data,root/'library',root/'library'/'Singoli']:os.chown(directory,uid,gid)
     if args.migrate_from:
         if (data/'state.sqlite3').exists() or (data/'kindle-sync.conf').exists():raise SystemExit('Refusing to overwrite existing data.')
         source=args.migrate_from.resolve()

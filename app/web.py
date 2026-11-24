@@ -18,15 +18,16 @@ from app.covers import thumbnail
 from app import reader
 from app import i18n
 from app import accounts
+from app import recommendations, telegram_books
 
 os.umask(0o077)
 c.init()
 accounts.init()
 app=Flask(__name__)
 ASSET_VERSION=hashlib.sha256(b''.join(path.read_bytes() for path in
-    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','style.css']]+
+    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','style.css']]+
     sorted((Path(app.static_folder)/'locales').glob('*.json')))).hexdigest()[:12]
-app.config.update(MAX_CONTENT_LENGTH=46*1024*1024,MAX_FORM_MEMORY_SIZE=16384,MAX_FORM_PARTS=12)
+app.config.update(MAX_CONTENT_LENGTH=46*1024*1024,MAX_FORM_MEMORY_SIZE=128*1024,MAX_FORM_PARTS=12)
 
 
 def fail(message, code=400):
@@ -46,8 +47,8 @@ def protect_changes():
     s=session()
     g.account=accounts.user(s['user_id']) if s else None
     if g.account:
-        g.account_context=c.use_account(g.account)
-        g.account_context.__enter__()
+        g.account_context=accounts.access(g.account,exclusive=request.path=='/api/account/delete')
+        if not g.account_context.__enter__():g.account=None
     public=request.path in ['/api/session','/api/auth/login','/api/auth/register','/api/auth/logout']
     if request.path.startswith('/api/') and not public and not g.account:
         return fail('Seleziona un account per continuare.',401)
@@ -57,8 +58,9 @@ def protect_changes():
     if request.method not in ['GET','HEAD','OPTIONS']:
         if s is None or not hmac.compare_digest(s['csrf'],request.headers.get('X-CSRF-Token','')):
             return fail('Sessione scaduta. Ricarica la pagina.',403)
-    if request.method=='POST' and request.path!='/api/upload' and not request.is_json:
-        return fail('Richiesta JSON necessaria.',415)
+    if request.method=='POST' and request.path!='/api/upload':
+        if not request.is_json:return fail('Richiesta JSON necessaria.',415)
+        if not isinstance(request.get_json(),dict):return fail('Richiesta non valida.')
 
 
 @app.teardown_request
@@ -171,6 +173,15 @@ def change_account_password():
     return res
 
 
+@app.post('/api/account/delete')
+def delete_current_account():
+    accounts.delete_account(g.account,request.get_json(),request.remote_addr or 'local')
+    token,csrf=accounts.new_session(old_token=request.cookies.get('kindle_session'))
+    res=make_response(jsonify(csrf=csrf,user=None))
+    set_session_cookie(res,token)
+    return res
+
+
 @app.get('/api/state')
 def state():
     with contextlib.closing(c.connect()) as db:
@@ -186,7 +197,7 @@ def state():
         for f,r in zip(files,rows):
             f['cover_url']=cover_url(r)
             try:
-                f['folder']=str(Path(r['path']).relative_to(c.library_dir()).parent) if r['origin']=='library' else 'Caricamenti'
+                f['folder']='Singoli' if r['origin']=='download' else (str(Path(r['path']).relative_to(c.library_dir()).parent) if r['origin']=='library' else 'Caricamenti')
             except ValueError:
                 f['folder']='Libreria'
             f['format']=Path(r['name']).suffix.lstrip('.').upper()
@@ -254,10 +265,11 @@ def request_library_check():
 
 
 def selected_ids(body):
+    if not isinstance(body,dict):raise ValueError('Seleziona da 1 a 100 file.')
     ids=body.get('ids',[])
     if not isinstance(ids,list) or not 1<=len(ids)<=100 or any(not isinstance(i,str) or len(i)!=32 for i in ids):
         raise ValueError('Seleziona da 1 a 100 file.')
-    return ids
+    return list(dict.fromkeys(ids))
 
 
 @app.post('/api/send')
@@ -365,10 +377,12 @@ def delete():
             if db.execute("SELECT 1 FROM jobs WHERE digest=? AND status IN ('queued','sending')",(f['digest'],)).fetchone():
                 raise ValueError('Attendi la fine degli invii prima di eliminare il file.')
             rows.append(f)
+        # Validate every requested upload before deleting any file in the batch.
+        paths={f['id']:c.safe_path(f) for f in rows if f['origin']=='upload' and f['available']}
         # Original library files remain untouched; this is clearly shown in confirmation.
         for f in rows:
-            if f['origin']=='upload' and f['available']:
-                c.safe_path(f).unlink()
+            if f['id'] in paths:
+                with contextlib.suppress(FileNotFoundError):paths[f['id']].unlink()
             db.execute('UPDATE files SET deleted=1 WHERE id=?',(f['id'],))
         c.event(db,'File rimossi dal catalogo. Gli originali della libreria sono conservati.')
     return jsonify(ok=True)
@@ -477,3 +491,68 @@ def account_language():
     if not isinstance(body,dict) or body.get('language') not in i18n.LANGUAGES:raise ValueError('Richiesta non valida.')
     with accounts.transaction() as db:db.execute('UPDATE users SET language=? WHERE id=?',(body['language'],g.account['id']))
     return jsonify(ok=True)
+
+
+@app.get('/api/recommendations')
+def recommended_books():
+    return jsonify(recommendations.snapshot())
+
+
+@app.post('/api/recommendations/sources')
+def recommendation_sources():
+    return jsonify(recommendations.save_sources(request.get_json()))
+
+
+@app.post('/api/recommendations/refresh')
+def refresh_recommendations():
+    started=recommendations.start_refresh(dict(g.account))
+    return jsonify(started=started,**recommendations.snapshot())
+
+
+@app.get('/api/recommendations/covers/<digest>')
+def recommended_cover(digest):
+    path=recommendations.cover_path(digest)
+    if path:return send_file(path,mimetype='image/webp',max_age=604800)
+    return send_file(Path(app.static_folder)/'cover-placeholder.svg',mimetype='image/svg+xml')
+
+
+@app.get('/api/telegram')
+def telegram_status():
+    return jsonify(telegram_books.status())
+
+
+@app.post('/api/telegram/connect')
+def connect_telegram():
+    return jsonify(telegram_books.connect(request.get_json()))
+
+
+@app.post('/api/telegram/verify')
+def verify_telegram():
+    return jsonify(telegram_books.verify(request.get_json()))
+
+
+@app.post('/api/telegram/disconnect')
+def disconnect_telegram():
+    return jsonify(telegram_books.disconnect())
+
+
+@app.post('/api/telegram/search')
+def search_telegram_books():
+    body=request.get_json()
+    if not isinstance(body,dict):raise ValueError('Richiesta non valida.')
+    if 'query' in body:
+        if 'url' in body or not isinstance(body['query'],str):raise ValueError('Richiesta non valida.')
+        return jsonify(telegram_books.search(query=body['query']))
+    return jsonify(telegram_books.search(book_url=body.get('url')))
+
+
+@app.post('/api/telegram/download')
+def download_telegram_book():
+    body=request.get_json()
+    if not isinstance(body,dict) or not isinstance(body.get('token'),str):raise ValueError('Richiesta non valida.')
+    return jsonify(telegram_books.download(body['token']))
+
+
+@app.post('/api/downloads/preferences')
+def download_language_preferences():
+    return jsonify(telegram_books.save_download_preferences(request.get_json()))

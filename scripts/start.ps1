@@ -9,7 +9,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Docker Compose v2 is required. Update Docker Desktop.' }
     & docker info *> $null
     if ($LASTEXITCODE -ne 0) { throw 'Docker is not ready. Start Docker Desktop with Linux containers and try again.' }
-    New-Item -ItemType Directory -Force -Path data, library | Out-Null
+    New-Item -ItemType Directory -Force -Path data, library, library/Singoli | Out-Null
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     if (-not (Test-Path -LiteralPath .env)) {
         $bindIP = '127.0.0.1'

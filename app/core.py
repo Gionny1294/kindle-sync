@@ -39,6 +39,10 @@ def library_dir():
     return LIBRARY if account is None or account['storage']=='legacy' else data_dir()/'library'
 
 
+def download_dir():
+    return Path(os.environ.get('BOOK_DOWNLOAD_DIR','/book-downloads'))
+
+
 def config_path():
     account=_account.get()
     return CONFIG if account is None or account['storage']=='legacy' else data_dir()/'kindle-sync.conf'
@@ -230,7 +234,7 @@ def validate(path, name=None):
 
 def safe_path(row):
     p = Path(row['path'])
-    base = data_dir() / 'uploads' if row['origin'] == 'upload' else library_dir()
+    base = download_dir() if row['origin']=='download' else (data_dir() / 'uploads' if row['origin'] == 'upload' else library_dir())
     if p.is_symlink() or not p.resolve().is_relative_to(base.resolve()) or not p.is_file():
         raise ValueError('Il file non è più disponibile nella cartella autorizzata.')
     return p

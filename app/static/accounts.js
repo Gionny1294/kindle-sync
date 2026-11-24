@@ -38,17 +38,23 @@
   if(activation)el('account-owner-code').value=activation;
   if(selected)el('account-login-title').textContent=T('Accedi a {name}',{name:selected.name});
  }
- async function start(){
-  document.body.classList.add('account-pending');el('account-screen').hidden=false;phase='picker';forms();
-  try{sessionInfo=await request('/api/session');csrf=sessionInfo.csrf;render();if(!sessionInfo.accounts.length)forms('register');}
-  catch(error){notice('account-error',error.message);}
+ async function start(resume=true){
+  const generation=epoch;
+  document.body.classList.add('account-pending');el('account-screen').hidden=resume;phase='picker';forms();
+  try{
+   const info=await request('/api/session');if(generation!==epoch)return;
+   sessionInfo=info;csrf=sessionInfo.csrf;
+   if(resume&&sessionInfo.user){user=sessionInfo.user;await openUser(true);return;}
+   el('account-screen').hidden=false;render();if(!sessionInfo.accounts.length)forms('register');
+  }catch(error){el('account-screen').hidden=false;notice('account-error',error.message);}
  }
  async function showPicker(force=false){
   if(!force&&window.appIsUploading?.()){window.toast?.(T('Attendi la fine del caricamento prima di cambiare account.'));return;}
   window.closeBook?.();window.cancelUploads?.();epoch++;phase='picker';user=null;
+  el('account-delete-panel').close();el('account-delete-form').reset();notice('account-delete-error','');el('account-delete-target').textContent='';
   if(el('confirm-dialog').open)el('confirm-dialog').close('cancel');
   el('account-login').reset();el('account-register').reset();el('setup-form').reset();el('account-password-form').reset();notice('account-password-error','');el('setup-screen').hidden=true;
-  window.dispatchEvent(new CustomEvent('kindle:account',{detail:{user:null}}));await start();
+  window.dispatchEvent(new CustomEvent('kindle:account',{detail:{user:null}}));await start(false);
  }
  async function choose(account){
   if(busy)return;selected=account;notice('account-error','');
@@ -61,17 +67,20 @@
   }
   forms('login');render();el('account-login-name').value=account.name;el('account-login-password').value='';el('account-login-password').focus();
  }
- async function openUser(){
+ async function openUser(restoreRoute=false){
   epoch++;if(user.language&&user.language!==window.KindleI18n.language)await window.KindleI18n.setLanguage(user.language);el('account-login').reset();el('account-register').reset();el('setup-form').reset();notice('setup-error','');
   try{
    const state=await request('/api/state');
-   if(state.setup_required)await setup();else activate();
-  }catch(error){notice('account-error',error.message);}
+   if(state.setup_required)await setup();else activate(restoreRoute);
+  }catch(error){el('account-screen').hidden=false;notice('account-error',error.message);}
  }
- function activate(){
+ function activate(restoreRoute=false){
   phase='active';document.body.classList.remove('account-pending');el('account-screen').hidden=true;el('setup-screen').hidden=true;
   el('account-password-form').reset();el('account-current-password-label').hidden=!user.password_required;el('account-current-password').required=Boolean(user.password_required);
-  el('current-account-name').textContent=user.name;window.dispatchEvent(new CustomEvent('kindle:account',{detail:{user}}));
+  el('account-delete-panel').close();el('account-delete-form').reset();notice('account-delete-error','');
+  el('account-delete-password-label').hidden=!user.password_required;el('account-delete-password').required=Boolean(user.password_required);
+  el('account-delete-target').textContent=user.name;
+  el('current-account-name').textContent=user.name;window.dispatchEvent(new CustomEvent('kindle:account',{detail:{user,restoreRoute}}));
  }
  async function setup(){
   phase='setup';document.body.classList.add('account-pending');el('account-screen').hidden=true;el('setup-screen').hidden=false;notice('setup-error','');
@@ -114,6 +123,25 @@
   busy=true;el('account-password-save').disabled=true;notice('account-password-error','');
   try{await request('/api/account/password',{current_password:el('account-current-password').value,password:el('account-new-password').value});await showPicker(true);notice('account-error','Password aggiornata. Seleziona il tuo account per continuare.');try{localStorage.setItem('kindle-auth-change',Date.now()+':'+Math.random());}catch{}}
   catch(error){notice('account-password-error',error.message);}finally{busy=false;el('account-password-save').disabled=false;}
+ };
+ el('delete-account').onclick=()=>{
+  if(busy||!user)return;
+  el('account-delete-form').reset();notice('account-delete-error','');el('account-delete-panel').showModal();
+  el(user.password_required?'account-delete-password':'account-delete-cancel').focus();
+ };
+ el('account-delete-cancel').onclick=()=>el('account-delete-panel').close();
+ el('account-delete-panel').addEventListener('close',()=>{el('account-delete-form').reset();notice('account-delete-error','');});
+ el('account-delete-form').onsubmit=async event=>{
+  event.preventDefault();if(busy)return;
+  if(window.appIsUploading?.()){notice('account-delete-error','Attendi la fine del caricamento prima di cambiare account.');return;}
+  busy=true;el('account-delete-submit').disabled=true;notice('account-delete-error','');
+  const accountId=user.id;
+  try{
+   await request('/api/account/delete',{current_password:el('account-delete-password').value});
+   await showPicker(true);notice('account-error','Account eliminato.');
+   try{for(const key of Object.keys(localStorage))if(key.startsWith('kindle-reading-'+accountId+'-')||key==='kindle-reader-preferences-'+accountId)localStorage.removeItem(key);}catch{}
+   try{localStorage.setItem('kindle-auth-change',Date.now()+':'+Math.random());}catch{}
+  }catch(error){notice('account-delete-error',error.message);}finally{busy=false;el('account-delete-submit').disabled=false;}
  };
  el('account-language').onclick=()=>{el('language-welcome').hidden=false;document.body.classList.add('language-pending');};
  window.addEventListener('kindle:language',()=>{render();if(phase==='active'&&user&&user.language!==window.KindleI18n.language){user.language=window.KindleI18n.language;request('/api/account/language',{language:user.language}).catch(()=>{});}if(!el('setup-screen').hidden&&el('setup-form').elements.smtp_password.placeholder)el('setup-form').elements.smtp_password.placeholder=T('Lascia vuoto per mantenere la password salvata.');});

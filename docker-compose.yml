@@ -10,6 +10,9 @@ x-common: &common
   volumes:
     - ./data:/data
     - ${LIBRARY_HOST_PATH:-./library}:/library:ro
+    - ${BOOK_DOWNLOAD_HOST_PATH:-./library/Singoli}:/book-downloads:ro
+  environment:
+    BOOK_DOWNLOAD_DIR: /book-downloads
   tmpfs:
     - /tmp:size=128m,mode=1777
   logging:
@@ -26,6 +29,12 @@ services:
         APP_UID: ${APP_UID:-1000}
         APP_GID: ${APP_GID:-1000}
     env_file: .env
+    environment:
+      BOOK_DOWNLOAD_DIR: /book-downloads
+    volumes:
+      - ./data:/data
+      - ${LIBRARY_HOST_PATH:-./library}:/library:ro
+      - ${BOOK_DOWNLOAD_HOST_PATH:-./library/Singoli}:/book-downloads
     ports:
       - "${APP_BIND_IP:-127.0.0.1}:${APP_PORT:-1997}:1997"
     healthcheck:

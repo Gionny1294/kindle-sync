@@ -1,4 +1,5 @@
 """Read local books from bounded snapshots; never serve book HTML as a document."""
+import codecs
 import contextlib
 import fcntl
 from functools import lru_cache
@@ -107,6 +108,27 @@ def decode(raw):
 
 
 @lru_cache(maxsize=32)
+def text_layout(path):
+    """Keep encoding and character boundaries consistent across all text sections."""
+    with path.open('rb') as stream:prefix=stream.read(3)
+    encoding,offset=('utf-16-le',2) if prefix.startswith(b'\xff\xfe') else (('utf-16-be',2) if prefix.startswith(b'\xfe\xff') else ('utf-8',3 if prefix.startswith(b'\xef\xbb\xbf') else 0))
+    def sections(encoding,offset):
+        decoder=codecs.getincrementaldecoder(encoding)(errors='strict' if encoding=='utf-8' else 'replace')
+        bounds=[];cursor=start=offset
+        with path.open('rb') as stream:
+            stream.seek(offset)
+            while raw:=stream.read(max(4,MAX_CHAPTER)):
+                cursor+=len(raw);decoder.decode(raw,final=False)
+                end=cursor-len(decoder.getstate()[0])
+                if end>start:bounds.append((start,end));start=end
+        decoder.decode(b'',final=True)
+        if cursor>start:bounds.append((start,cursor))
+        return bounds or [(offset,offset)]
+    try:return encoding,sections(encoding,offset)
+    except UnicodeDecodeError:return 'cp1252',sections('cp1252',0)
+
+
+@lru_cache(maxsize=32)
 def archive_book(path):
     try:
         with zipfile.ZipFile(path) as z:
@@ -152,7 +174,7 @@ def manifest(row):
         chapters=archive_book(path)['chapters']
     else:
         # Split very long plain text into manageable reading sections.
-        count=max(1,(path.stat().st_size+MAX_CHAPTER-1)//MAX_CHAPTER) if path.suffix=='.txt' else 1
+        count=len(text_layout(path)[1]) if path.suffix=='.txt' else 1
         if path.suffix in {'.html','.htm'} and path.stat().st_size>MAX_CHAPTER:
             raise ValueError('Documento HTML troppo grande per il lettore (massimo 4 MB).')
         chapters=[{'title':'Lettura' if count==1 else 'Parte '+str(i+1),'title_key':'Lettura' if count==1 else 'Parte {number}','title_number':i+1} for i in range(count)]
@@ -222,11 +244,12 @@ def chapter(row, index):
         with zipfile.ZipFile(path) as z:
             return sanitized(bounded_read(z,name,MAX_CHAPTER),row,name,book)
     if path.suffix=='.txt':
+        encoding,bounds=text_layout(path)
+        if not 0<=index<len(bounds):raise ValueError('Capitolo non disponibile.')
+        start,end=bounds[index]
         with path.open('rb') as stream:
-            stream.seek(index*MAX_CHAPTER)
-            raw=stream.read(MAX_CHAPTER)
-        if index<0 or not raw:raise ValueError('Capitolo non disponibile.')
-        return '<pre class="plain-text">'+html.escape(decode(raw))+'</pre>'
+            stream.seek(start);raw=stream.read(end-start)
+        return '<pre class="plain-text">'+html.escape(raw.decode(encoding,errors='replace'))+'</pre>'
     if index!=0 or path.suffix not in {'.htm','.html'}:
         raise ValueError('Capitolo non disponibile.')
     if path.stat().st_size>MAX_CHAPTER:raise ValueError('Documento HTML troppo grande per il lettore.')
