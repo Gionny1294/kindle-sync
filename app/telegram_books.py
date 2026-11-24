@@ -13,7 +13,7 @@ import time
 import unicodedata
 from xml.etree import ElementTree as ET
 import zipfile
-from app import core as c
+from app import core as c, reading_list
 from app.recommendations import read_json, snapshot
 
 FORMATS=('epub','pdf','mobi','azw3','fb2','txt','docx','rtf')
@@ -45,6 +45,47 @@ def save_download_preferences(body):
     if not isinstance(body,dict) or body.get('language') not in ('app',*LANGUAGE_ALIASES):
         raise ValueError('Lingua dei download non valida.')
     with c.transaction() as db:c.put(db,'download_language',json.dumps(body['language']))
+    return status()
+
+
+def download_folder():
+    with contextlib.closing(c.connect()) as db:
+        return read_json(db,'download_folder','')
+
+
+def download_destination(folder):
+    return 'Libri/Singoli/'+folder if folder else 'Libri/Singoli'
+
+
+def download_path(folder, create=False):
+    root=c.download_dir().resolve()
+    if not root.is_dir():
+        raise ValueError('Cartella Libri/Singoli non disponibile. Controlla il volume del servizio.')
+    parts=folder.split('/') if isinstance(folder,str) and folder else []
+    if (not isinstance(folder,str) or len(folder)>240 or
+            any(part in ('','.','..') or part != part.strip() or len(part.encode('utf-8'))>120 or
+                any(ch in '\\:*?"<>|' or unicodedata.category(ch).startswith('C') for ch in part)
+                for part in parts)):
+        raise ValueError('Indica una sottocartella valida della cartella download.')
+    path=root
+    try:
+        for part in parts:
+            path=path/part
+            if path.is_symlink():
+                raise ValueError('Indica una sottocartella valida della cartella download.')
+            if create:path.mkdir(exist_ok=True)
+        if not path.is_dir() or not path.resolve().is_relative_to(root):
+            raise ValueError('Cartella di destinazione non disponibile.')
+    except OSError:
+        raise ValueError('Cartella di destinazione non disponibile.') from None
+    return c.download_dir().joinpath(*parts)
+
+
+def save_download_folder(body):
+    folder=body.get('folder')
+    if isinstance(folder,str):folder=folder.strip()
+    if folder!='':download_path(folder,create=True)
+    with c.transaction() as db:c.put(db,'download_folder',json.dumps(folder))
     return status()
 
 
@@ -88,9 +129,10 @@ def write_config(value):
 
 def status():
     cfg=config()
+    folder=download_folder()
     return dict(bot=cfg.get('bot') or os.environ.get('TELEGRAM_BOOK_BOT',''),configured=bool(cfg),
         connected=bool(cfg.get('authorized')),pending=bool(cfg.get('code_hash')),password_required=bool(cfg.get('password_required')),
-        destination='Libri/Singoli',formats=list(FORMATS),**download_preferences())
+        folder=folder,destination=download_destination(folder),formats=list(FORMATS),**download_preferences())
 
 
 @contextlib.contextmanager
@@ -274,10 +316,11 @@ def search_query(value):
     return value
 
 
-def search(book_url=None,query=None):
+def search(book_url=None,query=None,reading_list_id=None):
     book=None
     if query is None:
-        book=next((b for b in snapshot()['books'] if b['url']==book_url),None)
+        book=reading_list.download_book(reading_list_id) if reading_list_id is not None else next(
+            (b for b in snapshot()['books'] if b['url']==book_url),None)
         if not book:raise ValueError('Libro non disponibile nei Consigliati. Aggiorna la pagina.')
         query=' '.join((book['title']+' '+book['author']).split())[:250].lstrip('/')
     query=search_query(query)
@@ -290,7 +333,9 @@ def search(book_url=None,query=None):
         # Both recommendation and free searches send one validated query to the configured bot.
         sent=await client.send_message(entity,query)
         editions=parse_editions(await replies(client,entity,sent.id,language=language),language)
-        tokens={secrets.token_hex(16):dict(option,**({'requested_title':book['title'],'requested_author':book['author']} if book else {}),expires=time.time()+600) for option in editions}
+        requested={'requested_title':book['title'],'requested_author':book['author']} if book else {}
+        if reading_list_id is not None:requested['reading_list_id']=reading_list_id
+        tokens={secrets.token_hex(16):dict(option,**requested,expires=time.time()+600) for option in editions}
         with c.transaction() as db:c.put(db,'telegram_search',json.dumps(tokens))
         return {'query':query,'language':language,'options':[{'token':token,**{k:(COMMAND.sub('',value).strip() if k=='label' else value) for k,value in option.items() if k in ['label','format','size','language']}} for token,option in tokens.items()]}
     return perform(find,timeout=30)
@@ -300,10 +345,10 @@ def verify_epub_language(path,language='it'):
     with zipfile.ZipFile(path) as archive:
         for name in archive.namelist():
             if not name.lower().endswith('.opf'):continue
-            from app.covers import bounded_read
+            from app.covers import bounded_read, parse_xml
             data=bounded_read(archive,name,2*1024*1024)
-            if b'<!ENTITY' in data.upper() or b'<!DOCTYPE' in data.upper():raise ValueError('Metadati EPUB non validi.')
-            try:root=ET.fromstring(data)
+            try:root=parse_xml(data)
+            except ValueError:raise ValueError('Metadati EPUB non validi.') from None
             except ET.ParseError:continue
             languages=[(node.text or '').strip().lower() for node in root.iter() if node.tag.rsplit('}',1)[-1]=='language']
             if languages and not any(language_code(lang)==language for lang in languages):
@@ -343,8 +388,7 @@ def install_file(temp,name,language='it'):
     if Path(name).suffix.lower().lstrip('.') not in FORMATS:raise ValueError('Il bot non ha inviato un formato libro supportato.')
     c.validate(temp,name)
     if Path(name).suffix.lower()=='.epub':verify_epub_language(temp,language)
-    target=c.download_dir()
-    if not target.is_dir():raise ValueError('Cartella Libri/Singoli non disponibile. Controlla il volume del servizio.')
+    target=download_path(download_folder())
     digest=c.engine.sha256(temp)
     # No overwrite and no symlink following. Same-named different editions get a digest suffix.
     for filename in [name,Path(name).stem[:100]+'-'+digest[:12]+Path(name).suffix.lower()]:
@@ -368,16 +412,20 @@ def install_file(temp,name,language='it'):
     raise ValueError('Esiste già un file con questo nome. Controlla la cartella Singoli.')
 
 
-def register_download(saved):
+def register_download(saved,reading_list_id=None):
     # Bind mounts expose the same ZFS file under different paths. Reuse the
     # library path when available so later scans cannot create a second entry.
     path=saved;origin='download'
-    for candidate in [c.library_dir()/saved.name,c.library_dir()/'Singoli'/saved.name]:
+    relative=saved.relative_to(c.download_dir())
+    for candidate in [c.library_dir()/relative,c.library_dir()/'Singoli'/relative]:
         if candidate.is_file() and not candidate.is_symlink() and candidate.samefile(saved):
             path=candidate;origin='library';break
     with c.transaction() as db:
         fid=c.register(db,path,saved.name,origin)
         db.execute('UPDATE files SET name=?,deleted=0,available=1 WHERE id=?',(saved.name,fid))
+        if reading_list_id is not None:
+            db.execute('UPDATE reading_list SET file_digest=(SELECT digest FROM files WHERE id=?) WHERE id=?',
+                       (fid,reading_list_id))
     return fid
 
 
@@ -413,7 +461,11 @@ def download(token):
             await client.download_media(message,file=str(temp),progress_callback=progress)
             c.validate(temp,'book.'+option['format'])
             saved=install_file(temp,download_name(temp,filename,option),language)
-            register_download(saved)
-            return dict(name=saved.name,destination='Libri/Singoli',format=option['format'])
+            if option.get('reading_list_id'):
+                register_download(saved,option['reading_list_id'])
+            else:
+                register_download(saved)
+            folder=saved.parent.relative_to(c.download_dir()).as_posix()
+            return dict(name=saved.name,destination=download_destination('' if folder=='.' else folder),format=option['format'])
         finally:temp.unlink(missing_ok=True)
     return perform(receive,timeout=110)

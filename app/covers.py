@@ -40,12 +40,17 @@ def bounded_read(archive,name,limit):
     return content
 
 
-def xml(archive,name):
-    data=bounded_read(archive,name,MAX_XML)
-    upper=data.upper()
-    if b'<!DOCTYPE' in upper or b'<!ENTITY' in upper:
+class NoDTD(ET.TreeBuilder):
+    def doctype(self, name, public_id, system_id):
         raise ValueError('Dichiarazioni XML non ammesse.')
-    return ET.fromstring(data)
+
+
+def parse_xml(data):
+    return ET.fromstring(data, parser=ET.XMLParser(target=NoDTD()))
+
+
+def xml(archive,name):
+    return parse_xml(bounded_read(archive,name,MAX_XML))
 
 
 def cover_image(archive):

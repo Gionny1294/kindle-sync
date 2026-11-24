@@ -112,6 +112,10 @@ def init():
           invalid INTEGER NOT NULL DEFAULT 0,detail TEXT NOT NULL DEFAULT '');
         CREATE UNIQUE INDEX IF NOT EXISTS one_library_check ON library_checks((1))
           WHERE status IN ('queued','running');
+        CREATE TABLE IF NOT EXISTS reading_list(id TEXT PRIMARY KEY,title TEXT NOT NULL,author TEXT NOT NULL,
+          isbn TEXT NOT NULL,url TEXT NOT NULL,cover_url TEXT,file_digest TEXT,created REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS reading_file_metadata(digest TEXT PRIMARY KEY,title TEXT NOT NULL,
+          author TEXT NOT NULL,isbn TEXT NOT NULL);
         ''')
         if 'auto_send' not in {r['name'] for r in db.execute('PRAGMA table_info(files)')}:
             db.execute('ALTER TABLE files ADD COLUMN auto_send INTEGER NOT NULL DEFAULT 1')
@@ -252,6 +256,9 @@ def register(db, path, name, origin):
     db.execute('''INSERT INTO files(id,name,path,digest,size,mtime,origin,created,auto_send) VALUES (?,?,?,?,?,?,?,?,?)
        ON CONFLICT(path) DO UPDATE SET digest=excluded.digest,size=excluded.size,mtime=excluded.mtime,available=1''',
        (fid,name,str(path),digest,size,after.st_mtime,origin,time.time(),int(path.suffix.lower() in engine.ALLOWED_SUFFIXES)))
+    if Path(name).suffix.lower()=='.epub':
+        from app.reading_list import index_epub
+        index_epub(db,path,digest)
     return fid
 
 

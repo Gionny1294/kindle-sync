@@ -14,12 +14,12 @@ import threading
 import time
 import unicodedata
 from urllib.parse import urljoin, urlsplit, urlunsplit, parse_qsl, urlencode
-from xml.etree import ElementTree as ET
 from zoneinfo import ZoneInfo
 
 import html5lib
 from PIL import Image
 from app import core as c, accounts
+from app.covers import parse_xml
 
 CATEGORIES=('new','charts','popular')
 DEFAULTS=[
@@ -82,7 +82,8 @@ def fetch(url):
     for _ in range(4):
         url=public_url(url);p=urlsplit(url)
         addresses=socket.getaddrinfo(p.hostname,443,type=socket.SOCK_STREAM)
-        if not addresses or any(not ipaddress.ip_address(a[4][0]).is_global for a in addresses):
+        ips=[ipaddress.ip_address(address[4][0]) for address in addresses]
+        if not ips or any(not ip.is_global or ip.is_multicast or getattr(ip,'is_site_local',False) for ip in ips):
             raise ValueError('La fonte deve usare un indirizzo pubblico.')
         connection=http.client.HTTPSConnection(p.hostname,timeout=6,context=ssl.create_default_context())
         # Keep the original host for certificate verification; try only checked public IPs.
@@ -290,11 +291,10 @@ def parse_books(content,base,limit=50):
         books.append(dict(title=title,url=url,author=str(author or '')[:250],cover=safe_link(base,cover),
                           isbn=str(isbn or '')[:32],rating=str(rating or '')[:60],published=str(published or '')[:32],rank=len(books)+1))
         return books[-1]
-    stripped=content.lstrip()
+    stripped=content[:1024].replace(b'\x00',b'').lstrip(b'\xef\xbb\xbf\xff\xfe \t\r\n')
     if stripped.startswith(b'<?xml') or stripped.startswith((b'<rss',b'<feed')):
-        # stdlib ElementTree does not resolve external entities; also reject declarations.
-        if b'<!DOCTYPE' in content.upper() or b'<!ENTITY' in content.upper():raise ValueError('Feed non valido.')
-        root=ET.fromstring(content)
+        try:root=parse_xml(content)
+        except ValueError:raise ValueError('Feed non valido.') from None
         for node in root.iter():
             node.tag=node.tag.rsplit('}',1)[-1]
         for item in list(root.iter('item'))+list(root.iter('entry')):
@@ -578,7 +578,7 @@ def cover_path(digest):
     if path.exists():return path
     try:
         data,_,_=fetch(remote)
-        with Image.open(io.BytesIO(data)) as image:
+        with Image.open(io.BytesIO(data),formats=['JPEG','PNG','WEBP','GIF','AVIF']) as image:
             if image.width*image.height>16000000:return None
             image.thumbnail((180,270));converted=image.convert('RGB');output=io.BytesIO();converted.save(output,format='WEBP',quality=80)
         # Atomic replacement prevents concurrent image requests seeing partial data.

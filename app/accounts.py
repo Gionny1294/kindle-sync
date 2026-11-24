@@ -224,7 +224,8 @@ def delete_account(account,body,ip):
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:raise ValueError('Account occupato. Attendi la fine delle operazioni e riprova.')
         with c.transaction() as db:
-            for table in ['jobs','sent','files','library_checks','events','sessions','attempts','settings']:
+            for table in ['jobs','sent','files','library_checks','events','sessions','attempts','settings',
+                          'reading_list','reading_file_metadata']:
                 db.execute('DELETE FROM '+table)
             for key,value in {'paused':1,'setup_complete':0,'mail_verified':0,'heartbeat':0,'scan':0,'next_run':0,'interval_minutes':30}.items():c.put(db,key,value)
         with contextlib.suppress(FileNotFoundError):c.config_path().unlink()

@@ -9,6 +9,8 @@
  window.addEventListener('kindle:account',event=>{window.closeBook();if(!event.detail.user)return;const saved=storage.get(preferenceKey())||(event.detail.user.legacy?storage.get('kindle-reader-preferences'):null)||{};Object.assign(preferences,{size:20,theme:0,font:'serif',line:1.7},saved);});
  const GAP=48,themes=['paper','sepia','night'];
  let current=null,pdf=null,pdfTask=null,renderTask=null,chapter=0,page=0,counts=[],busy=false,ready=false;
+ let returnPage='files';
+ function closeLabel(){el('reader-close').setAttribute('aria-label',window.KindleI18n.t(returnPage==='reading-list'?'Chiudi il libro e torna a Da leggere':'Chiudi il libro e torna alla libreria'));}
  let session=0,revision=0,layout=0,indexRun=0,indexKey='',controller=null,layoutWidth=0,layoutHeight=0,stride=0;
  let cache=new Map(),requests=new Map(),lastLocation=null,resizeTimer,lastSwipe=0,touch=null,pdfZoom=1;
  function styles(){const view=el('reader-view');view.dataset.theme=themes[preferences.theme];view.dataset.font=preferences.font;view.style.setProperty('--reader-size',preferences.size+'px');view.style.setProperty('--reader-leading',preferences.line);el('reader-size-label').textContent=window.KindleI18n.t(preferences.size+' px');el('reader-font').value=preferences.font;el('reader-leading').value=String(preferences.line);el('reader-theme').textContent=window.KindleI18n.t(['☾ Tema chiaro','☾ Tema seppia','☾ Tema notte'][preferences.theme]);storage.set(preferenceKey(),preferences);}
@@ -149,9 +151,9 @@
   for(const id of ['reader-content','reader-measure'])el(id).replaceChildren();el('reader-measure').hidden=true;el('reader-pdf-text').textContent=window.KindleI18n.t('');
   el('reader-view').hidden=true;el('shell').hidden=false;document.body.classList.remove('reading');document.title=window.KindleI18n.t('Kindle · La tua libreria');
  };
- window.openBook=async id=>{
+ window.openBook=async (id,fromPage='files')=>{
   if(!/^[a-f0-9]{32}$/.test(id)){location.hash='files';return;}if(current?.id===id&&!el('reader-view').hidden)return;
-  window.closeBook();const run=++session;controller=new AbortController();chapter=0;page=0;counts=[];layout++;pdfZoom=1;ready=false;busy=true;
+  window.closeBook();returnPage=fromPage;closeLabel();const run=++session;controller=new AbortController();chapter=0;page=0;counts=[];layout++;pdfZoom=1;ready=false;busy=true;
   el('shell').hidden=true;el('reader-view').hidden=false;document.body.classList.add('reading');styles();menus();
   el('reader-paper').hidden=true;el('reader-pdf').hidden=true;el('reader-title').textContent=window.KindleI18n.t('Apertura libro…');el('reader-send').disabled=true;el('reader-toc').replaceChildren();controls();status('Apertura del libro… La prima conversione può richiedere un minuto.');el('reader-close').focus();
   try{
@@ -165,7 +167,7 @@
    const saved=storage.get(readingKey(book.digest))||(window.KindleAccounts.user?.legacy?storage.get('kindle-reading-'+book.digest):null)||{};chapter=Math.max(0,Math.min(count-1,Number(saved.chapter)||0));await showChapter(chapter,saved);
   }catch(error){if(run!==session||error.name==='AbortError')return;busy=false;status(error.message||'Impossibile aprire il libro. Controlla che il file non sia danneggiato o protetto da DRM.');controls();}
  };
- el('reader-close').onclick=()=>{location.hash='files';};el('reader-prev').onclick=()=>turn(-1);el('reader-next').onclick=()=>turn(1);
+ el('reader-close').onclick=()=>{location.hash=returnPage;};el('reader-prev').onclick=()=>turn(-1);el('reader-next').onclick=()=>turn(1);
  el('reader-toc').onchange=event=>{progress();showChapter(Number(event.target.value));};el('reader-progress').onchange=event=>jump(Number(event.target.value));
  el('reader-jump').onsubmit=event=>{event.preventDefault();const value=Number(el('reader-page-number').value);if(Number.isInteger(value)&&value>0)jump(value);};
  el('reader-send').onclick=()=>{if(current)window.sendBook(current.id,el('reader-send'));};
@@ -180,6 +182,6 @@
  el('reader-scroll').addEventListener('touchstart',event=>{if(event.touches.length!==1||event.target.closest('a,button,input,select')){touch=null;return;}touch={x:event.touches[0].clientX,y:event.touches[0].clientY,time:Date.now()};},{passive:true});
  el('reader-scroll').addEventListener('touchend',event=>{if(!touch||event.changedTouches.length!==1)return;const end=event.changedTouches[0],dx=end.clientX-touch.x,dy=end.clientY-touch.y;if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.5&&Date.now()-touch.time<900&&window.getSelection().isCollapsed){lastSwipe=Date.now();turn(dx<0?1:-1);}touch=null;},{passive:true});
  document.addEventListener('keydown',event=>{if(el('reader-view').hidden||event.target.matches('input,select,textarea'))return;if(event.key==='Escape'){if(!el('reader-settings').hidden||!el('reader-contents').hidden)menus();else el('reader-close').click();return;}if(['ArrowRight','PageDown','ArrowLeft','PageUp'].includes(event.key)){event.preventDefault();turn(['ArrowRight','PageDown'].includes(event.key)?1:-1);}else if(event.key===' '&&!event.target.matches('button')){event.preventDefault();turn(event.shiftKey?-1:1);}});
- window.addEventListener('kindle:language',()=>{styles();if(!el('reader-status').hidden)status(el('reader-status').textContent);if(!current)return;progress();const options=el('reader-toc').options;for(let i=0;i<options.length;i++)options[i].textContent=pdf?window.KindleI18n.t('Pagina {number}',{number:i+1}):sectionTitle(i);controls();document.title=current.title+' · Kindle Sync';if(!pdf)reflow();});
+ window.addEventListener('kindle:language',()=>{styles();closeLabel();if(!el('reader-status').hidden)status(el('reader-status').textContent);if(!current)return;progress();const options=el('reader-toc').options;for(let i=0;i<options.length;i++)options[i].textContent=pdf?window.KindleI18n.t('Pagina {number}',{number:i+1}):sectionTitle(i);controls();document.title=current.title+' · Kindle Sync';if(!pdf)reflow();});
  document.addEventListener('visibilitychange',()=>{if(document.hidden)progress();else scheduleReflow();});window.addEventListener('pagehide',progress);window.addEventListener('resize',scheduleReflow);new ResizeObserver(scheduleReflow).observe(el('reader-window'));
 })();

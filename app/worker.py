@@ -233,7 +233,7 @@ def heartbeats():
 
 
 def main():
-    from app import recommendations
+    from app import reading_list, recommendations
     os.umask(0o077)
     c.init();accounts.init()
     signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
@@ -257,7 +257,7 @@ def main():
                     with c.transaction() as db:c.put(db,'heartbeat',time.time())
                     if process_library_check():last_scan[key]=time.time();worked=True
                     if time.time()-last_scan.get(key,0)>30:
-                        scan();recover_uploads();last_scan[key]=time.time()
+                        scan();recover_uploads();reading_list.index_existing_epubs();last_scan[key]=time.time()
                     schedule_tick()
                     if account and time.time()-last_recommendations.get(key,0)>30:
                         recommendations.start_refresh(account,scheduled=True)

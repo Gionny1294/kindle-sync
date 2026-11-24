@@ -18,11 +18,15 @@ from app.covers import thumbnail
 from app import reader
 from app import i18n
 from app import accounts
-from app import recommendations, telegram_books, updates
+from app import reading_list, recommendations, telegram_books, updates
 
 os.umask(0o077)
 c.init()
 accounts.init()
+for profile in accounts.profiles():
+    if profile['storage'] != 'legacy':
+        with accounts.access(profile) as exists:
+            if exists:c.init()
 app=Flask(__name__)
 ASSET_VERSION=hashlib.sha256(b''.join(path.read_bytes() for path in
     [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','updates.js','style.css']]+
@@ -203,13 +207,17 @@ def state():
           (SELECT detail FROM jobs WHERE digest=f.digest ORDER BY id DESC LIMIT 1) AS detail,
           (SELECT id FROM jobs WHERE digest=f.digest ORDER BY id DESC LIMIT 1) AS job_id
           FROM files f LEFT JOIN sent s ON s.sha256=f.digest WHERE f.deleted=0 ORDER BY f.created DESC,f.name COLLATE NOCASE''').fetchall()
+        saved_books,saved_files=reading_list.list_state(db,rows)
         files=[{k:r[k] for k in ['id','name','size','origin','available','created','sent_at','job_status','detail','job_id','auto_send']} for r in rows]
         for f in files:
             f['status']='accepted' if f['sent_at'] else (f['job_status'] or 'pending')
         for f,r in zip(files,rows):
             f['cover_url']=cover_url(r)
             try:
-                f['folder']='Singoli' if r['origin']=='download' else (str(Path(r['path']).relative_to(c.library_dir()).parent) if r['origin']=='library' else 'Caricamenti')
+                if r['origin']=='download':
+                    f['folder']=(Path('Singoli')/Path(r['path']).relative_to(c.download_dir()).parent).as_posix()
+                else:
+                    f['folder']=str(Path(r['path']).relative_to(c.library_dir()).parent) if r['origin']=='library' else 'Caricamenti'
             except ValueError:
                 f['folder']='Libreria'
             f['format']=Path(r['name']).suffix.lstrip('.').upper()
@@ -230,13 +238,19 @@ def state():
         last=db.execute('SELECT max(sent_at) FROM sent').fetchone()[0]
         logs=[dict(r) for r in db.execute('SELECT created,message FROM events ORDER BY id DESC LIMIT 60')]
     cfg=c.config()
-    return jsonify(account=public_account(g.account),setup_required=settings.get('setup_complete')!='1',mail_ready=settings.get('mail_verified')=='1' and not c.config_errors(),files=files,jobs=jobs,legacy=legacy,last_sent=last,logs=logs,recent_sent=recent,
+    return jsonify(account=public_account(g.account),setup_required=settings.get('setup_complete')!='1',mail_ready=settings.get('mail_verified')=='1' and not c.config_errors(),files=files,jobs=jobs,legacy=legacy,last_sent=last,logs=logs,recent_sent=recent,reading_list=saved_books,reading_list_files=saved_files,
        library_check=dict(library_check) if library_check else None,
        schedule={'paused':settings['paused']=='1','interval_minutes':int(settings['interval_minutes']),'next_run':float(settings['next_run'])},
        diagnostics={'worker_ok':time.time()-float(settings['heartbeat'])<180,'last_scan':float(settings['scan']),
           'library_ok':c.library_dir().is_dir(),'database_ok':True,'config_ok':not c.config_errors(),
           'missing':c.config_errors(),'configured':{k:bool(cfg.get(k)) for k in ['kindle_address','smtp_user','smtp_password','smtp_host','smtp_port']},
           'smtp_ssl':cfg.get('smtp_ssl','true')=='true'})
+
+
+@app.post('/api/reading-list')
+def update_reading_list():
+    reading_list.update(request.get_json())
+    return jsonify(ok=True)
 
 
 def cover_url(row,id_key='id'):
@@ -507,18 +521,24 @@ def account_language():
 
 @app.get('/api/recommendations')
 def recommended_books():
-    return jsonify(recommendations.snapshot())
+    return jsonify(recommendation_details(recommendations.snapshot()))
+
+
+def recommendation_details(data):
+    for book in data['books']:
+        book.update(reading_list.fingerprint(book))
+    return data
 
 
 @app.post('/api/recommendations/sources')
 def recommendation_sources():
-    return jsonify(recommendations.save_sources(request.get_json()))
+    return jsonify(recommendation_details(recommendations.save_sources(request.get_json())))
 
 
 @app.post('/api/recommendations/refresh')
 def refresh_recommendations():
     started=recommendations.start_refresh(dict(g.account))
-    return jsonify(started=started,**recommendations.snapshot())
+    return jsonify(started=started,**recommendation_details(recommendations.snapshot()))
 
 
 @app.get('/api/recommendations/covers/<digest>')
@@ -552,6 +572,9 @@ def disconnect_telegram():
 def search_telegram_books():
     body=request.get_json()
     if not isinstance(body,dict):raise ValueError('Richiesta non valida.')
+    if 'reading_list_id' in body:
+        if len(body)!=1 or not isinstance(body['reading_list_id'],str):raise ValueError('Richiesta non valida.')
+        return jsonify(telegram_books.search(reading_list_id=body['reading_list_id']))
     if 'query' in body:
         if 'url' in body or not isinstance(body['query'],str):raise ValueError('Richiesta non valida.')
         return jsonify(telegram_books.search(query=body['query']))
@@ -568,3 +591,8 @@ def download_telegram_book():
 @app.post('/api/downloads/preferences')
 def download_language_preferences():
     return jsonify(telegram_books.save_download_preferences(request.get_json()))
+
+
+@app.post('/api/downloads/folder')
+def set_download_folder():
+    return jsonify(telegram_books.save_download_folder(request.get_json()))

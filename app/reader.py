@@ -12,6 +12,7 @@ import re
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 from urllib.parse import unquote, urlsplit
 import xml.etree.ElementTree as ET
@@ -34,16 +35,20 @@ TAGS = {'p','div','span','br','h1','h2','h3','h4','h5','h6','section','article',
 
 def run_conversion(args, folder, output=None):
     """No shell, bounded time and output, isolated converter preferences."""
-    def limits():
-        import resource
-        resource.setrlimit(resource.RLIMIT_FSIZE, (512*1024*1024, 512*1024*1024))
-        resource.setrlimit(resource.RLIMIT_CPU, (85, 90))
+    converter = shutil.which(args[0])
+    if converter is None:
+        raise ValueError('Il convertitore non è disponibile. Controlla l’installazione del servizio.')
+    # Run limits in a fresh process. Python callbacks after fork can deadlock a threaded server.
+    setup = '''import os, resource, sys
+resource.setrlimit(resource.RLIMIT_FSIZE, (512 * 1024 * 1024,) * 2)
+resource.setrlimit(resource.RLIMIT_CPU, (85, 90))
+os.execv(sys.argv[1], sys.argv[1:])'''
     env = dict(os.environ, QT_QPA_PLATFORM='offscreen', CALIBRE_CONFIG_DIRECTORY=str(folder/'config'),
                XDG_CACHE_HOME=str(folder/'cache'), TMPDIR=str(folder))
     try:
         with open(output, 'wb') if output else open(os.devnull, 'wb') as out:
-            process = subprocess.Popen(args, cwd=folder, env=env, stdout=out,
-                stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=limits)
+            process = subprocess.Popen([sys.executable, '-I', '-c', setup, converter, *args[1:]],
+                cwd=folder, env=env, stdout=out, stderr=subprocess.DEVNULL, start_new_session=True)
             try:
                 code = process.wait(timeout=90)
             except subprocess.TimeoutExpired:
