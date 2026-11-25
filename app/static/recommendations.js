@@ -63,14 +63,14 @@
   try{data=await request('/api/recommendations/sources',{sources});sourceDirty=false;el('recommendation-sources').dataset.signature='';render();window.toast('Fonti salvate.');}catch(error){notice('recommendation-sources-error',error.message);}finally{button.disabled=false;}
  };
  document.addEventListener('click',event=>{const tab=event.target.closest('[data-recommendation-category]');if(tab){category=tab.dataset.recommendationCategory;document.querySelectorAll('[data-recommendation-category]').forEach(b=>{b.classList.toggle('active',b===tab);b.setAttribute('aria-pressed',String(b===tab));});render();}const button=event.target.closest('[data-recommendation-download]');if(button)download(data.books.filter(b=>b.categories.includes(category)).sort((a,b)=>(a.ranks?.[category]||0)-(b.ranks?.[category]||0))[Number(button.dataset.recommendationDownload)]);});
- let searchBusy=false,saving=false,searchGeneration=0,searchOptions=[];
+ let searchBusy=false,searchGeneration=0;
  let downloadLanguageDirty=false,lastDownloadLanguage=null,downloadFolderDirty=false;
  function effectiveDownloadLanguage(){return (telegram?.language_preference??'app')==='app'?window.KindleI18n.language:(telegram.language_preference||telegram.language);}
  function languageName(code){return T(({it:'Italiano',en:'Inglese',fr:'Francese',es:'Spagnolo',zh:'Cinese',ru:'Russo'})[code]||code);}
  function renderDownloadLanguage(){
   const language=effectiveDownloadLanguage();
   if(lastDownloadLanguage!==null&&lastDownloadLanguage!==language){
-   searchGeneration++;searchBusy=false;saving=false;searchOptions=[];el('downloads-results').replaceChildren();notice('downloads-status','');downloadToken++;el('download-dialog').close();
+   searchGeneration++;searchBusy=false;notice('downloads-status','');downloadToken++;el('download-dialog').close();
   }
   lastDownloadLanguage=language;
   if(!downloadLanguageDirty)el('download-language-select').value=telegram?.language_preference||'app';
@@ -104,43 +104,35 @@
   return T('Salvato in {folder}: {name}',{folder:saved.destination,name:saved.name});
  }
  function searchControls(){
-  el('downloads-search-submit').disabled=searchBusy||saving||!telegram?.connected;
-  el('downloads-query').disabled=searchBusy||saving;
-  document.querySelectorAll('[data-search-download]').forEach(button=>button.disabled=searchBusy||saving||button.dataset.saved==='true');
+  el('downloads-search-submit').disabled=searchBusy||!telegram?.connected;
+  el('downloads-query').disabled=searchBusy;
  }
- function renderSearchOptions(){
-  el('downloads-results').replaceChildren();
-  searchOptions.forEach((option,index)=>{
-   const card=document.createElement('article');card.className='card download-result-card';
-   const info=document.createElement('div');info.className='download-result-info';
-   const label=document.createElement('h2');label.className='download-result-label';label.setAttribute('data-untranslated','');label.textContent=option.label;
-   const meta=document.createElement('p');meta.className='small muted';meta.textContent=option.format.toUpperCase()+' · '+languageName(option.language||effectiveDownloadLanguage())+' · '+(option.size?new Intl.NumberFormat(window.KindleI18n.locale,{maximumFractionDigits:2}).format(option.size/1048576)+' MB':T('Dimensione non indicata'));
-   const button=document.createElement('button');button.className='primary';button.dataset.searchDownload=String(index);button.textContent=T('Scarica {format}',{format:option.format.toUpperCase()});button.onclick=()=>saveSearchOption(option,button);
-   info.append(label,meta);card.append(info,button);el('downloads-results').append(card);
-  });searchControls();
- }
- async function saveSearchOption(option,button){
-  if(saving||searchBusy)return;
-  const generation=searchGeneration,accountEpoch=window.KindleAccounts.epoch;saving=true;searchControls();notice('downloads-status','Download in corso…');
-  try{
-   const saved=await request('/api/telegram/download',{token:option.token});
-   if(generation!==searchGeneration||accountEpoch!==window.KindleAccounts.epoch)return;
-   button.dataset.saved='true';button.textContent=T('Scaricato');el('downloads-status').textContent=downloadMessage(saved);window.toast('Libro scaricato.');await refresh();
-  }catch(error){if(generation===searchGeneration&&accountEpoch===window.KindleAccounts.epoch&&error.name!=='AbortError')notice('downloads-status',error.message);}
-  finally{if(generation===searchGeneration){saving=false;searchControls();}}
+ async function downloadFirst(search,isCurrent,showStatus,emptyMessage){
+  showStatus(T('Ricerca delle edizioni nella lingua scelta…'));
+  const result=await request('/api/telegram/search',search);
+  if(!isCurrent())return;
+  const [option]=result.options;
+  if(!option){showStatus(T(emptyMessage));return;}
+  const size=option.size?' · '+new Intl.NumberFormat(window.KindleI18n.locale,{maximumFractionDigits:2}).format(option.size/1048576)+' MB':'';
+  showStatus(T('Download in corso…')+' '+option.format.toUpperCase()+size);
+  const saved=await request('/api/telegram/download',{token:option.token});
+  if(!isCurrent())return;
+  showStatus(downloadMessage(saved));
+  window.toast('Libro scaricato.');
+  await refresh();
  }
  el('downloads-connect').onclick=()=>{location.hash='settings';setTimeout(()=>el('telegram-settings').scrollIntoView({block:'start',behavior:'smooth'}),0);};
  el('downloads-search-form').onsubmit=async event=>{
-  event.preventDefault();if(searchBusy||saving)return;
+  event.preventDefault();if(searchBusy)return;
   if(!telegram?.connected){notice('downloads-status','Collega Telegram per scaricare i libri.');return;}
   const query=el('downloads-query').value.trim();if(!query)return;
-  const generation=++searchGeneration,accountEpoch=window.KindleAccounts.epoch;searchBusy=true;searchControls();notice('downloads-status','Ricerca delle edizioni nella lingua scelta…');
-  try{
-   const result=await request('/api/telegram/search',{query});
-   if(generation!==searchGeneration||accountEpoch!==window.KindleAccounts.epoch)return;
-   searchOptions=result.options;renderSearchOptions();notice('downloads-status',result.options.length?T('Edizioni trovate: {count}. Scegli il libro da scaricare.',{count:result.options.length}):'Nessuna edizione nella lingua scelta. Prova un altro titolo, autore o ISBN.');
-  }catch(error){if(generation===searchGeneration&&accountEpoch===window.KindleAccounts.epoch&&error.name!=='AbortError')notice('downloads-status',error.message);}
-  finally{if(generation===searchGeneration){searchBusy=false;searchControls();}}
+  const generation=++searchGeneration,accountEpoch=window.KindleAccounts.epoch;
+  const isCurrent=()=>generation===searchGeneration&&accountEpoch===window.KindleAccounts.epoch;
+  const showStatus=message=>{el('downloads-status').textContent=message;el('downloads-status').hidden=!message;};
+  searchBusy=true;searchControls();
+  try{await downloadFirst({query},isCurrent,showStatus,'Nessuna edizione nella lingua scelta. Prova un altro titolo, autore o ISBN.');}
+  catch(error){if(isCurrent()&&error.name!=='AbortError')notice('downloads-status',error.message);}
+  finally{if(isCurrent()){searchBusy=false;searchControls();}}
  };
  async function loadTelegram(){try{telegram=await request('/api/telegram');renderTelegram();}catch(error){if(error.name!=='AbortError'){notice('telegram-error',error.message);if(!el('page-downloads').hidden)notice('downloads-status',error.message);}}}
  function renderTelegram(){if(!telegram)return;renderDownloadLanguage();renderDownloadFolder();el('downloads-connection').textContent=T(telegram.connected?'Telegram collegato. Cerca il libro che vuoi scaricare.':'Collega Telegram per cercare e scaricare i libri.');el('downloads-connect').hidden=telegram.connected;searchControls();el('telegram-status').textContent=T(telegram.connected?'Telegram collegato. Download pronti.':'Telegram da collegare.');el('telegram-connect-form').hidden=telegram.connected;el('telegram-disconnect').hidden=!telegram.configured;el('telegram-code-form').hidden=!telegram.pending;el('download-bot-link').href='https://t.me/'+telegram.bot;if(telegram.bot&&!el('telegram-connect-form').matches(':focus-within'))el('telegram-connect-form').elements.bot.value=telegram.bot;if(telegram.password_required)notice('telegram-error','Inserisci la password di verifica in due passaggi di Telegram.');}
@@ -151,10 +143,15 @@
   if(!book)return;
   const accountEpoch=window.KindleAccounts.epoch;await loadTelegram();if(!window.KindleAccounts.active||accountEpoch!==window.KindleAccounts.epoch)return;
   if(!telegram?.connected){location.hash='settings';window.toast('Collega Telegram per scaricare i libri.');setTimeout(()=>el('telegram-settings').scrollIntoView({block:'start',behavior:'smooth'}),0);return;}
-  const token=++downloadToken;el('download-title').textContent=book.title+' · '+book.author;el('download-options').replaceChildren();el('download-status').textContent=T('Ricerca delle edizioni nella lingua scelta…');el('download-dialog').showModal();
-  try{const result=await request('/api/telegram/search',savedId?{reading_list_id:savedId}:{url:book.url});if(token!==downloadToken)return;el('download-status').textContent=T(result.options.length?'Edizione selezionata.':'Il bot non ha restituito un’edizione riconoscibile nella lingua scelta. Aprilo in Telegram.');
-   if(result.options.length){const option=result.options[0];el('download-status').textContent=T('Download in corso…')+' '+option.format.toUpperCase()+(option.size?' · '+(option.size/1048576).toFixed(2)+' MB':'');const saved=await request('/api/telegram/download',{token:option.token});if(token!==downloadToken)return;el('download-status').textContent=downloadMessage(saved);window.toast('Libro scaricato.');await refresh();}
-  }catch(error){if(token===downloadToken)el('download-status').textContent=T(error.message);}
+  const token=++downloadToken;
+  const isCurrent=()=>token===downloadToken&&accountEpoch===window.KindleAccounts.epoch;
+  const showStatus=message=>{el('download-status').textContent=message;};
+  el('download-title').textContent=book.title+(book.author?' · '+book.author:'');
+  el('download-dialog').showModal();
+  try{
+   await downloadFirst(savedId?{reading_list_id:savedId}:{url:book.url},isCurrent,showStatus,
+    'Il bot non ha restituito un’edizione riconoscibile nella lingua scelta. Aprilo in Telegram.');
+  }catch(error){if(isCurrent()&&error.name!=='AbortError')showStatus(T(error.message));}
  }
  window.addEventListener('kindle:saved-download',event=>download(event.detail,event.detail.id));
  window.addEventListener('kindle:reading-list',()=>{
@@ -165,6 +162,6 @@
   if(restore)el('recommendation-books').querySelector(`[data-reading-list-key="${CSS.escape(key)}"]`)?.focus();
  });
  window.addEventListener('kindle:page',event=>{if(['recommended','settings'].includes(event.detail.page))load();if(['downloads','settings'].includes(event.detail.page))loadTelegram();});
- window.addEventListener('kindle:account',()=>{clearTimeout(timer);data=null;telegram=null;loading=false;sourceDirty=false;downloadToken++;downloadLanguageDirty=false;lastDownloadLanguage=null;downloadFolderDirty=false;el('download-folder-form').reset();notice('download-folder-error','');el('download-folder-summary').textContent='';el('downloads-folder').textContent='';el('download-language-form').reset();notice('download-language-error','');el('download-language-summary').textContent='';el('downloads-language').textContent='';searchGeneration++;searchBusy=false;saving=false;searchOptions=[];el('downloads-search-form').reset();el('downloads-results').replaceChildren();notice('downloads-status','');el('downloads-connection').textContent=T('Telegram da collegare.');el('downloads-connect').hidden=false;searchControls();el('recommendation-books').replaceChildren();el('recommendation-sources').replaceChildren();el('recommendation-sources').dataset.signature='';el('telegram-connect-form').reset();el('telegram-code-form').reset();el('download-dialog').close();for(const id of ['telegram-error','recommendation-sources-error','recommendation-status'])notice(id,'');if(window.KindleAccounts.active)load();});
+ window.addEventListener('kindle:account',()=>{clearTimeout(timer);data=null;telegram=null;loading=false;sourceDirty=false;downloadToken++;downloadLanguageDirty=false;lastDownloadLanguage=null;downloadFolderDirty=false;el('download-folder-form').reset();notice('download-folder-error','');el('download-folder-summary').textContent='';el('downloads-folder').textContent='';el('download-language-form').reset();notice('download-language-error','');el('download-language-summary').textContent='';el('downloads-language').textContent='';searchGeneration++;searchBusy=false;el('downloads-search-form').reset();notice('downloads-status','');el('downloads-connection').textContent=T('Telegram da collegare.');el('downloads-connect').hidden=false;searchControls();el('recommendation-books').replaceChildren();el('recommendation-sources').replaceChildren();el('recommendation-sources').dataset.signature='';el('telegram-connect-form').reset();el('telegram-code-form').reset();el('download-dialog').close();for(const id of ['telegram-error','recommendation-sources-error','recommendation-status'])notice(id,'');if(window.KindleAccounts.active)load();});
  window.addEventListener('kindle:language',()=>{render();renderTelegram();if(window.KindleAccounts.active)loadTelegram();});
 })();
