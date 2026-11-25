@@ -632,5 +632,10 @@
   "Salvato in {folder}: {name}": "Saved to {folder}: {name}",
   "Libro scaricato.": "Book downloaded.",
   "Indica una sottocartella valida della cartella download.": "Enter a valid subfolder of the download folder.",
-  "Cartella di destinazione non disponibile.": "The destination folder is unavailable."
+  "Cartella di destinazione non disponibile.": "The destination folder is unavailable.",
+  "Fotografa ISBN": "Scan ISBN",
+  "Lettura dell’ISBN…": "Reading ISBN…",
+  "ISBN non trovato. Fotografa da vicino il codice a barre del libro e riprova.": "ISBN not found. Take a closer photo of the book’s barcode and try again.",
+  "ISBN inserito. Premi Scarica per cercare il libro.": "ISBN entered. Press Download to find the book.",
+  "Impossibile leggere la foto. Riprova con un’altra immagine.": "Could not read the photo. Try another image."
 }

@@ -632,5 +632,10 @@
   "Salvato in {folder}: {name}": "Salvato in {folder}: {name}",
   "Libro scaricato.": "Libro scaricato.",
   "Indica una sottocartella valida della cartella download.": "Indica una sottocartella valida della cartella download.",
-  "Cartella di destinazione non disponibile.": "Cartella di destinazione non disponibile."
+  "Cartella di destinazione non disponibile.": "Cartella di destinazione non disponibile.",
+  "Fotografa ISBN": "Fotografa ISBN",
+  "Lettura dell’ISBN…": "Lettura dell’ISBN…",
+  "ISBN non trovato. Fotografa da vicino il codice a barre del libro e riprova.": "ISBN non trovato. Fotografa da vicino il codice a barre del libro e riprova.",
+  "ISBN inserito. Premi Scarica per cercare il libro.": "ISBN inserito. Premi Scarica per cercare il libro.",
+  "Impossibile leggere la foto. Riprova con un’altra immagine.": "Impossibile leggere la foto. Riprova con un’altra immagine."
 }

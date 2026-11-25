@@ -632,5 +632,10 @@
   "Salvato in {folder}: {name}": "已保存到 {folder}：{name}",
   "Libro scaricato.": "图书已下载。",
   "Indica una sottocartella valida della cartella download.": "请输入下载文件夹下的有效子文件夹。",
-  "Cartella di destinazione non disponibile.": "目标文件夹不可用。"
+  "Cartella di destinazione non disponibile.": "目标文件夹不可用。",
+  "Fotografa ISBN": "扫描 ISBN",
+  "Lettura dell’ISBN…": "正在读取 ISBN…",
+  "ISBN non trovato. Fotografa da vicino il codice a barre del libro e riprova.": "未找到 ISBN。请靠近拍摄图书的条形码，然后重试。",
+  "ISBN inserito. Premi Scarica per cercare il libro.": "已填入 ISBN。点击“下载”即可查找图书。",
+  "Impossibile leggere la foto. Riprova con un’altra immagine.": "无法读取照片。请换一张图片重试。"
 }

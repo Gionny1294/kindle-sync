@@ -632,5 +632,10 @@
   "Salvato in {folder}: {name}": "Сохранено в {folder}: {name}",
   "Libro scaricato.": "Книга скачана.",
   "Indica una sottocartella valida della cartella download.": "Укажите допустимую подпапку папки загрузок.",
-  "Cartella di destinazione non disponibile.": "Папка назначения недоступна."
+  "Cartella di destinazione non disponibile.": "Папка назначения недоступна.",
+  "Fotografa ISBN": "Сканировать ISBN",
+  "Lettura dell’ISBN…": "Считывание ISBN…",
+  "ISBN non trovato. Fotografa da vicino il codice a barre del libro e riprova.": "ISBN не найден. Сфотографируйте штрихкод книги крупнее и повторите попытку.",
+  "ISBN inserito. Premi Scarica per cercare il libro.": "ISBN введён. Нажмите «Скачать», чтобы найти книгу.",
+  "Impossibile leggere la foto. Riprova con un’altra immagine.": "Не удалось прочитать фотографию. Попробуйте другое изображение."
 }

@@ -632,5 +632,10 @@
   "Salvato in {folder}: {name}": "Enregistré dans {folder} : {name}",
   "Libro scaricato.": "Livre téléchargé.",
   "Indica una sottocartella valida della cartella download.": "Indiquez un sous-dossier valide du dossier de téléchargement.",
-  "Cartella di destinazione non disponibile.": "Le dossier de destination est indisponible."
+  "Cartella di destinazione non disponibile.": "Le dossier de destination est indisponible.",
+  "Fotografa ISBN": "Scanner l’ISBN",
+  "Lettura dell’ISBN…": "Lecture de l’ISBN…",
+  "ISBN non trovato. Fotografa da vicino il codice a barre del libro e riprova.": "ISBN introuvable. Photographiez le code-barres du livre de plus près, puis réessayez.",
+  "ISBN inserito. Premi Scarica per cercare il libro.": "ISBN renseigné. Appuyez sur Télécharger pour rechercher le livre.",
+  "Impossibile leggere la foto. Riprova con un’altra immagine.": "Impossible de lire la photo. Essayez avec une autre image."
 }

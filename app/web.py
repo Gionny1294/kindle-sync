@@ -29,7 +29,7 @@ for profile in accounts.profiles():
             if exists:c.init()
 app=Flask(__name__)
 ASSET_VERSION=hashlib.sha256(b''.join(path.read_bytes() for path in
-    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','updates.js','style.css']]+
+    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','isbn.js','updates.js','style.css','vendor/zxing/zxing.min.js']]+
     sorted((Path(app.static_folder)/'locales').glob('*.json')))).hexdigest()[:12]
 app.config.update(MAX_CONTENT_LENGTH=46*1024*1024,MAX_FORM_MEMORY_SIZE=128*1024,MAX_FORM_PARTS=12)
 
