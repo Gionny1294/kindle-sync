@@ -63,7 +63,8 @@
    if(current!==generation)return;
    if(!isbn){showStatus('ISBN non trovato. Fotografa da vicino il codice a barre del libro e riprova.');return;}
    query.value=isbn;
-   showStatus('ISBN inserito. Premi Scarica per cercare il libro.');
+   query.dispatchEvent(new Event('input',{bubbles:true}));
+   showStatus('ISBN inserito. Premi Cerca per trovare il libro.');
    if(!submit.disabled)submit.focus();
   }catch{
    if(current===generation)showStatus('Impossibile leggere la foto. Riprova con un’altra immagine.');

@@ -1,4 +1,5 @@
 import contextlib
+from datetime import datetime
 import io
 import json
 import time
@@ -39,8 +40,9 @@ def upload(client, headers, name, content):
 
 def recommend():
     source = recommendations.DEFAULTS[0]
+    today = datetime.now(recommendations.ROME).date().isoformat()
     book = {'title': 'Una nuova storia', 'author': 'Luca Riva', 'isbn': '9780306406157',
-            'url': 'https://www.example.com/book', 'cover': '', 'published': '2025-01-01', 'rank': 1}
+            'url': 'https://www.example.com/book', 'cover': '', 'published': today, 'rank': 1}
     with core.transaction() as db:
         recommendations.initialize(db)
         core.put(db, 'recommendation_sources', json.dumps([source]))

@@ -18,7 +18,7 @@ from app.covers import thumbnail
 from app import reader
 from app import i18n
 from app import accounts
-from app import reading_list, recommendations, telegram_books, updates
+from app import book_catalog, reading_list, recommendations, telegram_books, updates
 
 os.umask(0o077)
 c.init()
@@ -29,7 +29,7 @@ for profile in accounts.profiles():
             if exists:c.init()
 app=Flask(__name__)
 ASSET_VERSION=hashlib.sha256(b''.join(path.read_bytes() for path in
-    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','isbn.js','updates.js','style.css','vendor/zxing/zxing.min.js']]+
+    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','isbn.js','updates.js','style.css','icon.svg','apple-touch-icon.png','cover-placeholder.svg','vendor/zxing/zxing.min.js']]+
     sorted((Path(app.static_folder)/'locales').glob('*.json')))).hexdigest()[:12]
 app.config.update(MAX_CONTENT_LENGTH=46*1024*1024,MAX_FORM_MEMORY_SIZE=128*1024,MAX_FORM_PARTS=12)
 
@@ -108,6 +108,7 @@ def manifest():
     data=json.loads((Path(app.static_folder)/'manifest.webmanifest').read_text())
     data['name']='Kindle Sync'
     data['lang']='zh-CN' if i18n.language()=='zh' else i18n.language()
+    for icon in data['icons']:icon['src']+='?v='+ASSET_VERSION
     return app.response_class(app.json.dumps(data),mimetype='application/manifest+json')
 
 
@@ -198,8 +199,20 @@ def delete_current_account():
     return res
 
 
+def shared_download_path(row):
+    path=Path(row['path'])
+    root=c.download_dir()
+    if row['origin']=='download' and path.is_relative_to(root):
+        return path
+    library_downloads=c.library_dir()/'Singoli'
+    if row['origin']=='library' and path.is_relative_to(library_downloads):
+        return root/path.relative_to(library_downloads)
+    return None
+
+
 @app.get('/api/state')
 def state():
+    manage_downloads=updates.can_manage(g.account['id'])
     with contextlib.closing(c.connect()) as db:
         settings=dict(db.execute('SELECT key,value FROM settings').fetchall())
         rows=db.execute('''SELECT f.*,s.sent_at,
@@ -213,6 +226,7 @@ def state():
             f['status']='accepted' if f['sent_at'] else (f['job_status'] or 'pending')
         for f,r in zip(files,rows):
             f['cover_url']=cover_url(r)
+            f['delete_download']=bool(manage_downloads and r['available'] and shared_download_path(r))
             try:
                 if r['origin']=='download':
                     f['folder']=(Path('Singoli')/Path(r['path']).relative_to(c.download_dir()).parent).as_posix()
@@ -229,7 +243,7 @@ def state():
               ORDER BY f2.deleted ASC,f2.available DESC,f2.created DESC,f2.id LIMIT 1)
             ORDER BY julianday(s.sent_at) DESC,s.sha256 LIMIT 10"""):
             recent.append({'name':r['name'] or Path(r['path']).name,'sent_at':r['sent_at'],
-                'status':'accepted' if r['tracked'] else 'legacy','file_id':r['file_id'],
+                'status':'accepted' if r['tracked'] else 'legacy','file_id':r['file_id'] if r['available'] and not r['deleted'] else None,
                 'cover_url':cover_url(r,id_key='file_id') if r['file_id'] and not r['deleted'] else None})
         library_check=db.execute('SELECT * FROM library_checks ORDER BY id DESC LIMIT 1').fetchone()
         jobs=[dict(r) for r in db.execute('SELECT id,file_id,name,status,source,created,started,finished,detail FROM jobs ORDER BY id DESC LIMIT 300')]
@@ -394,7 +408,11 @@ def upload():
 
 @app.post('/api/delete')
 def delete():
-    ids=selected_ids(request.get_json())
+    body=request.get_json()
+    ids=selected_ids(body)
+    delete_download=body.get('delete_download') is True
+    if delete_download and (len(ids)!=1 or not updates.can_manage(g.account['id'])):
+        return fail('Solo il primo account può eliminare file dalla cartella condivisa dei download.',403)
     with c.transaction() as db:
         rows=[]
         for fid in ids:
@@ -405,12 +423,22 @@ def delete():
             rows.append(f)
         # Validate every requested upload before deleting any file in the batch.
         paths={f['id']:c.safe_path(f) for f in rows if f['origin']=='upload' and f['available']}
-        # Original library files remain untouched; this is clearly shown in confirmation.
+        if delete_download:
+            row=rows[0]
+            target=shared_download_path(row)
+            try:
+                if (target is None or target.is_symlink() or not target.resolve().is_relative_to(c.download_dir().resolve())
+                        or not target.samefile(c.safe_path(row)) or c.engine.sha256(target)!=row['digest']):
+                    raise ValueError('Il file scaricato non è più disponibile o è stato modificato.')
+                target.unlink()
+            except OSError:
+                raise ValueError('Impossibile eliminare il file dalla cartella dei download.') from None
         for f in rows:
             if f['id'] in paths:
                 with contextlib.suppress(FileNotFoundError):paths[f['id']].unlink()
             db.execute('UPDATE files SET deleted=1 WHERE id=?',(f['id'],))
-        c.event(db,'File rimossi dal catalogo. Gli originali della libreria sono conservati.')
+        message='File eliminato dalla cartella dei download.' if delete_download else 'File rimossi dal catalogo. Gli originali della libreria sono conservati.'
+        c.event(db,message)
     return jsonify(ok=True)
 
 
@@ -541,6 +569,15 @@ def refresh_recommendations():
     return jsonify(started=started,**recommendation_details(recommendations.snapshot()))
 
 
+@app.post('/api/recommendations/synopsis')
+def recommended_synopsis():
+    url=request.get_json().get('url')
+    book=next((book for book in recommendations.snapshot()['books']
+               if book['url']==url),None)
+    if book is None:return fail('Libro non disponibile.',404)
+    return jsonify(recommendations.book_synopsis(book))
+
+
 @app.get('/api/recommendations/covers/<digest>')
 def recommended_cover(digest):
     path=recommendations.cover_path(digest)
@@ -577,8 +614,54 @@ def search_telegram_books():
         return jsonify(telegram_books.search(reading_list_id=body['reading_list_id']))
     if 'query' in body:
         if 'url' in body or not isinstance(body['query'],str):raise ValueError('Richiesta non valida.')
-        return jsonify(telegram_books.search(query=body['query']))
+        result=telegram_books.search(query=body['query'])
+        if body.get('preview') is True and result['options']:
+            edition=book_catalog.preferred_edition(result['query'],result['options'])
+            result['preview']=book_catalog.preview(result['query'],result['language'],edition)
+            result['preview']['edition']={key:edition.get(key) for key in ('token','format','size')}
+        return jsonify(result)
     return jsonify(telegram_books.search(book_url=body.get('url')))
+
+
+@app.get('/api/downloads/covers/<int:cover_id>')
+def download_cover(cover_id):
+    path=None
+    if 0 < cover_id <= 999999999:
+        path=recommendations.cached_cover(f'https://covers.openlibrary.org/b/id/{cover_id}-M.jpg?default=false','download-covers')
+    if path:return send_file(path,mimetype='image/webp')
+    return send_file(Path(app.static_folder)/'cover-placeholder.svg',mimetype='image/svg+xml')
+
+
+@app.post('/api/downloads/catalogue/search')
+def search_download_catalogue():
+    body=request.get_json()
+    query=telegram_books.search_query(body.get('query'))
+    page=body.get('page',1)
+    if type(page) is not int or page<1:return fail('Richiesta non valida.')
+    language=telegram_books.download_preferences()['language']
+    return jsonify(book_catalog.search(query,language,page,body.get('author_search') is True))
+
+
+@app.get('/api/downloads/catalogue/<token>/cover')
+def download_catalogue_cover(token):
+    book=book_catalog.get_book(token)
+    path=book_catalog.book_cover(book) if book else None
+    if path:return send_file(path,mimetype='image/webp')
+    return send_file(Path(app.static_folder)/'cover-placeholder.svg',mimetype='image/svg+xml')
+
+
+@app.post('/api/downloads/catalogue/details')
+def download_catalogue_details():
+    book=book_catalog.get_book(request.get_json().get('id'))
+    if not book:return fail('Libro non disponibile.',404)
+    return jsonify(book_catalog.book_details(book))
+
+
+@app.post('/api/downloads/catalogue/edition')
+def search_catalogue_edition():
+    book=book_catalog.get_book(request.get_json().get('id'))
+    if not book:return fail('Libro non disponibile.',404)
+    return jsonify(telegram_books.search(catalogue_book=book))
 
 
 @app.post('/api/telegram/download')

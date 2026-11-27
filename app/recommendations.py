@@ -1,4 +1,4 @@
-"""Public book charts, account-owned sources and a weekly Europe/Rome refresh."""
+"""Public book charts and recent releases from account-owned sources."""
 import concurrent.futures
 import contextlib
 from datetime import datetime, timedelta
@@ -36,8 +36,7 @@ ROME=ZoneInfo('Europe/Rome')
 
 def next_run(now=None):
     local=datetime.fromtimestamp(time.time() if now is None else now,ROME)
-    target=local.replace(hour=8,minute=0,second=0,microsecond=0)+timedelta(days=(0-local.weekday())%7)
-    if target<=local:target+=timedelta(days=7)
+    target=local.replace(hour=local.hour//6*6,minute=0,second=0,microsecond=0)+timedelta(hours=6)
     return target.timestamp()
 
 
@@ -50,6 +49,9 @@ def initialize(db):
     if not db.execute("SELECT 1 FROM settings WHERE key='recommendation_sources'").fetchone():
         c.put(db,'recommendation_sources',json.dumps(DEFAULTS))
         c.put(db,'recommendation_next',next_run())
+    if read_json(db,'recommendation_six_hour_schedule',0)!=2:
+        c.put(db,'recommendation_next',time.time())
+        c.put(db,'recommendation_six_hour_schedule',2)
     if not db.execute("SELECT 1 FROM settings WHERE key='recommendation_mondadori_added'").fetchone():
         sources=read_json(db,'recommendation_sources',[])
         urls={source['url'] for source in sources}
@@ -159,13 +161,13 @@ def rating_fields(value,count=None,url='',best=5):
                 rating=str(score).rstrip('0').rstrip('.')+'/5')
 
 
-def schema_records(doc):
+def schema_records(doc, record_types=('Book','Product')):
     def visit(node):
         if isinstance(node,list):
             for child in node:yield from visit(child)
         elif isinstance(node,dict):
             types=node.get('@type',[]);types=[types] if isinstance(types,str) else (types if isinstance(types,list) else [])
-            if 'Book' in types or 'Product' in types:
+            if any(kind in types for kind in record_types):
                 yield node
                 if isinstance(node.get('hasVariant'),list):yield from visit(node['hasVariant'])
             else:
@@ -175,6 +177,96 @@ def schema_records(doc):
         if script.get('type')=='application/ld+json':
             try:yield from visit(json.loads(script.text or ''))
             except (ValueError,TypeError,RecursionError):continue
+
+
+def synopsis_text(value):
+    if not isinstance(value,str) or not value.strip():return ''
+    fragment=html5lib.parseFragment(value[:16000],namespaceHTMLElements=False)
+
+    def collect(node):
+        if not isinstance(node.tag,str) or node.tag in ('script','style'):return ''
+        if node.tag=='br':return '\n'
+        content=(node.text or '')+''.join(collect(child)+(child.tail or '') for child in node)
+        return '\n'+content+'\n' if node.tag in ('p','div','li','blockquote') else content
+
+    paragraphs=[' '.join(part.split()) for part in collect(fragment).splitlines()]
+    return '\n\n'.join(filter(None,paragraphs))
+
+
+def catalogue_genres(value):
+    labels=[]
+    generic={'libri','books','ebook','ebooks','e-book','kindle'}
+    for item in value if isinstance(value,list) else [value]:
+        if isinstance(item,dict):item=item.get('name')
+        if not isinstance(item,str) or '://' in item or len(item)>180:continue
+        label=' '.join(synopsis_text(item).split())
+        if label and label.casefold() not in generic and label not in labels:labels.append(label)
+    return labels[:3]
+
+
+def breadcrumb_genres(base,page_url,title,breadcrumb):
+    if source_name(base) not in ('IBS','Feltrinelli') or not isinstance(breadcrumb,list):return []
+    trail=[(safe_link(base,item.get('item')),item.get('name')) for item in breadcrumb if isinstance(item,dict)]
+    if len(trail)<3:return []
+    last_url,last_name=trail[-1]
+    if urlsplit(last_url)._replace(query='',fragment='').geturl().rstrip('/')!=page_url:return []
+    if ' '.join(str(last_name).split()).casefold()!=title:return []
+    for url,name in trail[:-1]:
+        if urlsplit(url).hostname==urlsplit(base).hostname and urlsplit(url).path.startswith('/libri/'):
+            return catalogue_genres(name)
+    return []
+
+
+def detail_book_text(content,base,book):
+    doc=html5lib.parse(content,namespaceHTMLElements=False)
+    wanted=book.get('isbn','').replace('-','')
+    title=' '.join(book['title'].split()).casefold()
+    book_url=urlsplit(book['url'])._replace(query='',fragment='').geturl().rstrip('/')
+    page_url=urlsplit(base)._replace(query='',fragment='').geturl().rstrip('/')
+    matches=[];genres=[];breadcrumbs=[]
+    for node in schema_records(doc,('Book','Product','BreadcrumbList')):
+        if 'itemListElement' in node:
+            breadcrumbs.append(node['itemListElement']);continue
+        isbn=str(node.get('isbn') or node.get('gtin13') or node.get('gtin') or '').replace('-','')
+        if wanted and isbn and isbn!=wanted:continue
+        link=safe_link(base,node.get('url') or node.get('@id'))
+        link=urlsplit(link)._replace(query='',fragment='').geturl().rstrip('/')
+        if wanted and isbn==wanted:
+            score=3
+        elif link==book_url:
+            score=2
+        elif link in ('',page_url) and ' '.join(str(node.get('name','')).split()).casefold()==title:
+            score=1
+        else:continue
+        description=synopsis_text(node.get('description'))
+        if description:matches.append((score,len(description),description))
+        labels=catalogue_genres(node.get('genre'))
+        if labels:genres.append((score,labels))
+        elif labels:=catalogue_genres(node.get('category')):genres.append((0,labels))
+    labels=max(genres,key=lambda match:match[0],default=(0,[]))[1]
+    if not labels:
+        for breadcrumb in breadcrumbs:
+            labels=breadcrumb_genres(base,page_url,title,breadcrumb)
+            if labels:break
+    return max(matches,default=(0,0,''))[2],labels
+
+
+def book_synopsis(book):
+    urls=[book['url']]
+    isbn=book.get('isbn','').replace('-','')
+    if re.fullmatch(r'97[89][0-9]{10}',isbn) and source_name(book['url'])!='Mondadori':
+        urls.append('https://www.mondadoristore.it/p/'+isbn)
+    reached=False;genres=[]
+    for url in urls:
+        try:content,_,base=fetch(url)
+        except (OSError,http.client.HTTPException,ValueError):continue
+        reached=True
+        description,labels=detail_book_text(content,base,book)
+        genres=genres or labels
+        if description:return dict(synopsis=description,genres=genres,source_url=base,source_name=source_name(base))
+    if not reached:
+        raise ValueError('Impossibile recuperare la trama. Riprova tra poco.')
+    return dict(synopsis='',genres=genres)
 
 
 def detail_metadata(content,base,book):
@@ -245,7 +337,7 @@ METADATA_FIELDS=('rating','rating_value','rating_count','rating_source','rating_
 
 
 def enrich_cached():
-    """Date all release candidates before choosing the newest 50; enrich chart books too."""
+    """Date release candidates and enrich books shown in the overall chart."""
     visible=snapshot()['books']
     visible_urls={book['url'] for book in visible};visible_isbns={book['isbn'] for book in visible if book.get('isbn')}
     with contextlib.closing(c.connect()) as db:
@@ -281,7 +373,7 @@ def enrich_cached():
                 c.put(db,'recommendation_cache',json.dumps(current))
 
 
-def parse_books(content,base,limit=50):
+def parse_books(content,base,limit=50,*,enrich=True):
     """Known chart cards, schema.org Book/ItemList, or a book-oriented RSS/Atom feed."""
     books=[];seen=set()
     def add(title,url,author='',cover='',isbn='',rating='',published=''):
@@ -318,7 +410,7 @@ def parse_books(content,base,limit=50):
             isbn=re.search(r'/p/(\d{13})',link)
             before=len(books)
             add(text(title),urljoin('https://www.mondadoristore.it/',link),author,cover,isbn[1] if isbn else '')
-            if len(books)>before and isbn:books[-1].update(mondadori_metadata(doc,isbn[1],books[-1]['url']))
+            if enrich and len(books)>before and isbn:books[-1].update(mondadori_metadata(doc,isbn[1],books[-1]['url']))
         if books:return books[:limit]
     for link in doc.iter('a'):
         kind=''
@@ -409,8 +501,12 @@ def save_sources(body):
     return snapshot()
 
 
+def base_book_title(title):
+    return re.sub(r'\.?\s*Ediz\.\s*(?:italiana|illustrata|a colori)\.?','',title,flags=re.I).strip()
+
+
 def book_identity(book):
-    title=re.sub(r'\.?\s*Ediz\.\s*(?:italiana|illustrata|a colori)\.?','',book['title'],flags=re.I)
+    title=base_book_title(book['title'])
     value=unicodedata.normalize('NFKD',title+' '+book.get('author','')).casefold()
     return re.sub(r'[\W_]+','', ''.join(ch for ch in value if not unicodedata.combining(ch)),flags=re.UNICODE)
 
@@ -439,7 +535,9 @@ def snapshot():
         due=read_json(db,'recommendation_next',next_run())
     books={};reports=[]
     aliases=identity_groups(book for source in sources if source['enabled'] for book in cache.get(source['id'],{}).get('books',[]))
-    today=datetime.fromtimestamp(now,ROME).date().isoformat()
+    today=datetime.fromtimestamp(now,ROME).date()
+    first_day=(today-timedelta(days=1)).isoformat()
+    last_day=today.isoformat()
     for source in sources:
         entry=cache.get(source['id'],{});reports.append({**source,'updated':entry.get('updated'),'checked':entry.get('checked'),
             'error':entry.get('error',''),'count':len(entry.get('books',[]))})
@@ -457,13 +555,14 @@ def snapshot():
             if category=='new':
                 released=publication_date(book.get('published'))
                 previous=item['_new_publication']
-                if len(released)==10 and released<=today and (previous is None or released>previous['published']):
-                    item['_new_publication']={field:book.get(field) for field in ('published','published_source','published_url')}
+                if len(released)==10 and first_day<=released<=last_day and (previous is None or released>previous['published']):
+                    item['_new_publication']={'published':released,'published_source':book.get('published_source'),
+                        'published_url':book.get('published_url')}
             if category not in item['categories']:item['categories'].append(category)
             provider=source_name(source['url']);score=1/(60+book['rank'])
             item['_scores'][category][provider]=max(score,item['_scores'][category].get(provider,0))
             item['sources'].append({'name':source['name'],'url':source['url'],'rank':book['rank'],'category':category,'updated':book.get('last_seen',entry.get('updated')),'stale':bool(entry.get('error'))})
-    limits={'new':50,'charts':10};selected={}
+    limits={'new':None,'charts':10};selected={}
     for category,limit in limits.items():
         if category=='new':
             ranked=sorted(((key,b) for key,b in books.items() if b['_new_publication']),
@@ -522,7 +621,9 @@ def refresh_sources(sources):
 
 
 def prune_release_history():
-    today=datetime.now(ROME).date().isoformat()
+    today=datetime.now(ROME).date()
+    first_day=(today-timedelta(days=1)).isoformat()
+    last_day=today.isoformat()
     with c.transaction() as db:
         sources=read_json(db,'recommendation_sources',[]);cache=read_json(db,'recommendation_cache',{})
         for source in sources:
@@ -531,14 +632,17 @@ def prune_release_history():
             released=[];pending=[]
             for book in books:
                 date=publication_date(book.get('published'))
-                (released if len(date)==10 and date<=today else pending).append(book)
-            released.sort(key=lambda book:(-datetime.fromisoformat(book['published']).toordinal(),book_identity(book),book['url']))
+                if len(date)==10 and date<=last_day:
+                    released.append((date,book))
+                else:
+                    pending.append(book)
+            released.sort(key=lambda pair:(-datetime.fromisoformat(pair[0]).toordinal(),book_identity(pair[1]),pair[1]['url']))
             retained=[];identities=set();aliases=identity_groups(books)
-            for book in released:
+            for date,book in released:
+                if len(retained)>=50 and date<first_day:break
                 identity=aliases['title:'+book_identity(book)]
                 if identity in identities:continue
                 retained.append(book);identities.add(identity)
-                if len(retained)==50:break
             cache[source['id']]['books']=retained+pending[:50]
         c.put(db,'recommendation_cache',json.dumps(cache))
 
@@ -573,7 +677,12 @@ def cover_path(digest):
         for book in cache.get(source['id'],{}).get('books',[]):
             if book['cover'] and hashlib.sha256(book['cover'].encode()).hexdigest()==digest:remote=book['cover'];break
     if not remote:return None
-    folder=c.data_dir()/'recommendation-covers';folder.mkdir(exist_ok=True)
+    return cached_cover(remote,'recommendation-covers')
+
+
+def cached_cover(remote,directory):
+    digest=hashlib.sha256(remote.encode()).hexdigest()
+    folder=c.data_dir()/directory;folder.mkdir(exist_ok=True)
     path=folder/(digest+'.webp')
     if path.exists():return path
     try:

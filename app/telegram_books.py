@@ -13,8 +13,8 @@ import time
 import unicodedata
 from xml.etree import ElementTree as ET
 import zipfile
-from app import core as c, reading_list
-from app.recommendations import read_json, snapshot
+from app import book_catalog, core as c, reading_list
+from app.recommendations import base_book_title, read_json, snapshot
 
 FORMATS=('epub','pdf','mobi','azw3','fb2','txt','docx','rtf')
 COMMAND=re.compile(r'/(?:book|get|dl)(?:_[A-Za-z0-9][A-Za-z0-9_]{0,127}|\d+(?:_[A-Za-z0-9]+)?)(?!\w)')
@@ -274,11 +274,11 @@ def parse_editions(messages,language='it'):
             meta=edition_metadata(body,language)
             if not meta:continue
             if message.document:
-                results.append(dict(label=body[:900],document_id=message.id,**meta));continue
+                results.append(dict(label=body[:900],document_id=message.id,**edition_names(body),**meta));continue
             for row_index,row in enumerate(message.buttons or []):
                 for button_index,button in enumerate(row):
                     if getattr(button,'data',None) and re.search(r'download|scarica|📥|⬇',button.text or '',re.I):
-                        results.append(dict(label=body[:900],message_id=message.id,row=row_index,column=button_index,**meta))
+                        results.append(dict(label=body[:900],message_id=message.id,row=row_index,column=button_index,**edition_names(body),**meta))
     return sorted((item for item in results if item['size'] is None or item['size']<=c.MAX_BYTES),key=edition_key)[:30]
 
 
@@ -316,13 +316,15 @@ def search_query(value):
     return value
 
 
-def search(book_url=None,query=None,reading_list_id=None):
-    book=None
+def search(book_url=None,query=None,reading_list_id=None,catalogue_book=None):
+    book=catalogue_book
     if query is None:
-        book=reading_list.download_book(reading_list_id) if reading_list_id is not None else next(
-            (b for b in snapshot()['books'] if b['url']==book_url),None)
+        if book is None:
+            book=reading_list.download_book(reading_list_id) if reading_list_id is not None else next(
+                (b for b in snapshot()['books'] if b['url']==book_url),None)
         if not book:raise ValueError('Libro non disponibile nei Consigliati. Aggiorna la pagina.')
-        query=' '.join((book['title']+' '+book['author']).split())[:250].lstrip('/')
+        title=base_book_title(book['title']) if catalogue_book is not None else book['title']
+        query=' '.join((title+' '+book['author']).split())[:250].lstrip('/')
     query=search_query(query)
     language=download_preferences()['language']
     with c.transaction() as db:
@@ -333,11 +335,13 @@ def search(book_url=None,query=None,reading_list_id=None):
         # Both recommendation and free searches send one validated query to the configured bot.
         sent=await client.send_message(entity,query)
         editions=parse_editions(await replies(client,entity,sent.id,language=language),language)
+        if catalogue_book is not None:
+            editions=book_catalog.match_editions(book,editions)
         requested={'requested_title':book['title'],'requested_author':book['author']} if book else {}
         if reading_list_id is not None:requested['reading_list_id']=reading_list_id
         tokens={secrets.token_hex(16):dict(option,**requested,expires=time.time()+600) for option in editions}
         with c.transaction() as db:c.put(db,'telegram_search',json.dumps(tokens))
-        return {'query':query,'language':language,'options':[{'token':token,**{k:(COMMAND.sub('',value).strip() if k=='label' else value) for k,value in option.items() if k in ['label','format','size','language']}} for token,option in tokens.items()]}
+        return {'query':query,'language':language,'options':[{'token':token,**{k:(COMMAND.sub('',value).strip() if k=='label' else value) for k,value in option.items() if k in ['label','title','author','format','size','language']}} for token,option in tokens.items()]}
     return perform(find,timeout=30)
 
 
@@ -433,7 +437,7 @@ def download(token):
     language=download_preferences()['language']
     with c.transaction() as db:
         stored=read_json(db,'telegram_search',{});option=stored.get(token)
-        if not option or option['expires']<time.time():raise ValueError('Ricerca scaduta. Premi di nuovo Scarica.')
+        if not option or option['expires']<time.time():raise ValueError('Ricerca scaduta. Ripeti la ricerca.')
         if option.get('language','it')!=language:raise ValueError('La lingua dei download è cambiata. Ripeti la ricerca.')
         stored.pop(token)
         c.put(db,'telegram_search',json.dumps(stored))

@@ -4,18 +4,24 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#173f39"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="description" content="La tua libreria, pronta per il Kindle.">
-<link rel="manifest" href="/manifest.webmanifest?v={{ assets_version }}"><link rel="icon" href="/static/icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest?v={{ assets_version }}"><link rel="icon" href="/static/icon.svg?v={{ assets_version }}" type="image/svg+xml"><link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ assets_version }}">
 <link rel="stylesheet" href="/static/style.css?v={{ assets_version }}"><script src="/static/i18n.js?v={{ assets_version }}" defer></script><script src="/static/accounts.js?v={{ assets_version }}" defer></script><script src="/static/reader.js?v={{ assets_version }}" defer></script><script src="/static/app.js?v={{ assets_version }}" defer></script>
 <script src="/static/recommendations.js?v={{ assets_version }}" defer></script><script src="/static/isbn.js?v={{ assets_version }}" defer></script><script src="/static/updates.js?v={{ assets_version }}" defer></script>
 <title>Kindle · La tua libreria</title>
 </head>
 <body class="language-pending account-pending">
+{% macro ui_icon(path) -%}
+<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="{{ path }}"/></svg>
+{%- endmacro %}
+{% macro book_mark() -%}
+<img class="brand-mark" src="/static/icon.svg?v={{ assets_version }}" alt="" width="42" height="42">
+{%- endmacro %}
 <div id="language-loading" class="language-loading" role="status">Kindle Sync<span class="language-spinner" aria-hidden="true"></span></div>
 <section id="language-welcome" class="language-welcome" aria-labelledby="language-welcome-title" hidden>
- <div class="language-welcome-inner"><span class="brand-mark" aria-hidden="true">k.</span><p class="eyebrow">KINDLE SYNC</p><h1 id="language-welcome-title">Scegli la lingua<br><span lang="en">Choose your language</span></h1><p class="language-intro">Puoi cambiarla in seguito · You can change it later</p><div class="language-options" data-language-options></div><p id="language-error" class="error-text" role="alert" hidden></p></div>
+ <div class="language-welcome-inner">{{ book_mark() }}<p class="eyebrow">KINDLE SYNC</p><h1 id="language-welcome-title">Scegli la lingua<br><span lang="en">Choose your language</span></h1><p class="language-intro">Puoi cambiarla in seguito · You can change it later</p><div class="language-options" data-language-options></div><p id="language-error" class="error-text" role="alert" hidden></p></div>
 </section>
 <section id="account-screen" class="account-screen" aria-labelledby="account-title" hidden><div class="account-inner">
- <span class="brand-mark" aria-hidden="true">k.</span><p class="eyebrow">KINDLE SYNC</p><h1 id="account-title">Chi sta leggendo?</h1><p class="muted">Scegli il tuo account o creane uno nuovo.</p>
+ {{ book_mark() }}<p class="eyebrow">KINDLE SYNC</p><h1 id="account-title">Chi sta leggendo?</h1><p class="muted">Scegli il tuo account o creane uno nuovo.</p>
  <div id="account-list" class="account-list"></div><button id="account-create" class="secondary full">＋ Crea un account</button>
  <form id="account-login" class="card stack" hidden><h2 id="account-login-title"></h2><input id="account-login-name" type="hidden" autocomplete="username"><label>Password dell’account<input id="account-login-password" type="password" autocomplete="current-password" maxlength="256"></label><label class="check-line"><input id="account-login-remember" type="checkbox" checked><span>Ricordami su questo dispositivo<span class="small muted remember-note">Accesso ricordato per 30 giorni. Usa solo un dispositivo personale.</span></span></label><div class="button-row"><button type="button" class="secondary" data-account-back>Indietro</button><button id="account-login-submit" class="primary">Accedi</button></div></form>
  <form id="account-register" class="card stack" hidden><h2>Crea un account</h2><label>Nome account<input id="account-register-name" autocomplete="username" minlength="2" maxlength="40" required></label><label>Password dell’account<input id="account-register-password" type="password" autocomplete="new-password" maxlength="256"><span class="small muted">Password facoltativa, senza lunghezza minima. Lascia vuoto per entrare senza password.</span></label><label>Ripeti la password<input id="account-register-confirm" type="password" autocomplete="new-password" maxlength="256"></label><label id="account-owner-code-label" hidden>Codice dell’installazione<input id="account-owner-code" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="text"><span class="small muted">Per recuperare la libreria esistente, usa il collegamento o il codice di attivazione dell’installazione.</span></label><label class="check-line"><input id="account-register-remember" type="checkbox" checked><span>Ricordami su questo dispositivo<span class="small muted remember-note">Accesso ricordato per 30 giorni. Usa solo un dispositivo personale.</span></span></label><div class="button-row"><button type="button" class="secondary" data-account-back>Indietro</button><button id="account-register-submit" class="primary">Crea account</button></div></form>
@@ -28,61 +34,103 @@
 </div></section>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <div id="shell">
-<header class="top"><a class="brand" href="#home" aria-label="Kindle Sync, vai alla home"><span class="brand-mark">k.</span><span>KINDLE SYNC</span></a><span id="top-status" class="pill">Connessione…</span></header>
+<header class="top"><a class="brand" href="#home" aria-label="Kindle Sync, vai alla home">{{ book_mark() }}<span>Kindle Sync</span></a><span id="top-status" class="pill" role="status"><span id="top-status-label">Connessione…</span></span></header>
 <main>
 <section id="page-home" class="page">
- <div class="page-heading"><p class="eyebrow">LA TUA LIBRERIA, SENZA ATTESE</p><h1>Una buona lettura<br>ti aspetta.</h1><p class="muted">Dal telefono al Kindle. Al momento giusto.</p></div>
- <article class="hero"><div><span class="eyebrow">IL PROSSIMO CAPITOLO</span><h2 id="hero-title">La libreria si sta preparando.</h2><p id="hero-note">Controllo del servizio in corso.</p></div><div class="book-art" aria-hidden="true"><span></span><span></span><span></span></div><button id="home-send" class="light">Controlla e invia ora <span aria-hidden="true">↗</span></button></article>
- <div class="library-actions"><button id="check-library" class="secondary full">↻ Controlla cartella ora</button><p class="small muted">Rileva anche i libri già presenti nella cartella del server.</p></div><p id="library-check-status" class="notice" role="status" aria-live="polite" hidden></p>
- <div id="health-warning" class="notice warning" role="status" hidden></div>
+ <div class="page-heading"><h1>Home</h1></div>
+ <div class="home-overview">
+  <article class="home-actions">
+   <div><h2 id="hero-title">La libreria si sta preparando.</h2><p id="hero-note">Controllo del servizio in corso.</p></div>
+   <div class="home-buttons">
+    <button id="home-send" class="light">Controlla e invia ora ↗</button>
+    <button id="check-library" class="home-secondary" aria-describedby="scan-help">↻ Controlla cartella ora</button>
+    <button class="home-secondary" data-upload="true">Carica un file</button>
+   </div>
+   <p id="scan-help" class="sr-only">Rileva anche i libri già presenti nella cartella del server.</p>
+  </article>
  <div class="stats"><article class="card"><span class="stat-label">PROSSIMO CONTROLLO</span><strong id="next-send">—</strong><span id="schedule-summary" class="small muted">Ogni 30 minuti</span></article><article class="card"><span class="stat-label">ULTIMO INVIO SMTP</span><strong id="last-send">—</strong><span class="small muted">Consegna da verificare sul Kindle</span></article></div>
- <div class="section-heading"><h2>Ancora da inviare <span id="pending-count" class="count"></span></h2><button id="open-pending" class="text">Seleziona →</button></div><div id="home-queue" class="stack"></div><button id="pending-more" class="secondary full" hidden>Mostra altri libri in attesa</button>
- <div class="section-heading"><h2>Ultimi 10 inviati</h2><button class="text" data-go="history">Attività →</button></div><p class="small muted recent-note">Dal registro SMTP, incluso lo storico precedente. Verifica la consegna sul Kindle.</p><div id="recent-sent" class="recent-grid"></div>
- <article class="card discover-teaser"><div><p class="eyebrow">LA PROSSIMA LETTURA</p><h2>Scopri i Consigliati</h2><p class="small muted">Novità, classifiche e i libri più letti del momento.</p></div><button class="secondary" data-go="recommended">Esplora →</button></article>
+ </div>
+ <p id="library-check-status" class="notice" role="status" aria-live="polite" hidden></p>
+ <div id="health-warning" class="notice warning" role="status" hidden></div>
  <button id="update-available" class="secondary" data-go="settings" hidden>Aggiornamento disponibile</button>
- <article class="tip"><span aria-hidden="true">↥</span><div><h3>Un libro da caricare?</h3><p>Scegli un file dal tuo dispositivo e invialo subito.</p></div><button class="icon-button" data-upload="true" aria-label="Carica un file">+</button></article>
+ <div class="home-collections">
+  <section class="home-waiting">
+ <div class="section-heading"><h2>Ancora da inviare <span id="pending-count" class="count"></span></h2><button id="open-pending" class="text">Seleziona →</button></div><div id="home-queue" class="stack"></div><button id="pending-more" class="secondary full" hidden>Mostra altri libri in attesa</button>
+  </section>
+  <section class="home-recent">
+ <div class="section-heading"><h2>Ultimi 10 inviati</h2></div><p class="small muted recent-note">Dal registro SMTP, incluso lo storico precedente. Verifica la consegna sul Kindle.</p><div id="recent-sent" class="recent-grid"></div>
+  </section>
+ </div>
+ <article class="card discover-teaser"><h2>Scopri i Consigliati</h2><button class="secondary" data-go="recommended">Esplora →</button></article>
 </section>
 <section id="page-files" class="page" hidden>
- <div class="page-heading"><p class="eyebrow">IL TUO SCAFFALE DIGITALE</p><h1>La libreria.</h1><p class="muted">Scegli cosa leggere dopo.</p><button class="secondary" type="button" data-go="reading-list">Da leggere</button></div>
- <article id="upload-panel" class="card upload-card stack">
- <div><h2>Aggiungi una lettura</h2><p class="small muted">EPUB, PDF, Word, TXT, RTF, HTML, MOBI, AZW, FB2, ODT, CBZ · max 45 MB per file</p></div>
- <label class="file-picker">＋ Scegli file<input id="file-input" type="file" multiple accept=".epub,.pdf,.doc,.docx,.txt,.rtf,.htm,.html,.mobi,.azw,.azw3,.fb2,.odt,.cbz"><span id="picked-names" class="small">Puoi selezionare più documenti</span></label>
- <div class="button-row"><button id="upload-only" class="secondary" disabled>Carica</button><button id="upload-send" class="primary" disabled>Carica e invia ora ↗</button></div>
- <div id="upload-progress" class="stack" aria-live="polite" hidden></div>
- </article>
+ <div class="page-heading heading-actions"><h1>La libreria</h1><button class="secondary" type="button" data-go="reading-list">Da leggere</button></div>
+ <div class="card library-search">
  <label class="search"><span>Cerca nella cartella dei libri</span><input id="search" type="search" placeholder="Titolo, nome del file o sottocartella…" autocomplete="off" enterkeyhint="search"></label>
  <div class="library-filters"><label>Cartella<select id="folder-filter"><option value="">Tutte le cartelle</option></select></label><label>Formato<select id="format-filter"><option value="">Tutti i formati</option></select></label><button id="files-refresh" class="secondary">↻ Aggiorna cartella</button></div>
  <p class="small muted library-help">Apri un libro con Leggi o spediscilo con Invia ora. Nei dettagli puoi scegliere se inviarlo anche in automatico. La ricerca comprende tutte le sottocartelle.</p>
  <div class="filter-row" role="group" aria-label="Filtra i file"><button class="filter active" data-filter="all" aria-pressed="true">Tutti</button><button class="filter" data-filter="pending" aria-pressed="false">Da inviare</button><button class="filter" data-filter="problems" aria-pressed="false">Da controllare</button></div>
+ </div>
+ <article id="upload-panel" class="card upload-card stack">
+ <div class="upload-caption"><h2>Aggiungi una lettura</h2><p class="small muted">EPUB, PDF, Word, TXT, RTF, HTML, MOBI, AZW, FB2, ODT, CBZ · max 45 MB per file</p></div>
+ <label class="file-picker">＋ Scegli file<input id="file-input" type="file" multiple accept=".epub,.pdf,.doc,.docx,.txt,.rtf,.htm,.html,.mobi,.azw,.azw3,.fb2,.odt,.cbz"><span id="picked-names" class="small">Puoi selezionare più documenti</span></label>
+ <div class="button-row"><button id="upload-only" class="secondary" disabled>Carica</button><button id="upload-send" class="primary" disabled>Carica e invia ora ↗</button></div>
+ <div id="upload-progress" class="stack" aria-live="polite" hidden></div>
+ </article>
  <div class="section-heading"><p id="file-count" class="small muted"></p><button id="select-visible" class="text">Seleziona visibili</button></div>
  <div id="file-list" class="stack"></div><button id="load-more" class="secondary full" hidden>Mostra altri file</button>
  <div id="selection-bar" class="selection-bar" hidden><div><strong id="selection-count">0 selezionati</strong><button id="clear-selection" class="text">Deseleziona</button></div><div class="button-row"><button id="delete-selected" class="danger" aria-label="Elimina file selezionati">Elimina</button><button id="send-selected" class="primary">Invia ora ↗</button></div></div>
 </section>
 <section id="page-reading-list" class="page" hidden>
- <div class="page-heading"><h1 id="reading-list-heading" tabindex="-1">Da leggere</h1><div class="button-row"><button class="secondary" type="button" data-go="files">La libreria</button><button class="secondary" type="button" data-go="recommended">Consigliati</button></div></div>
+ <div class="page-heading heading-actions"><h1 id="reading-list-heading" tabindex="-1">Da leggere</h1><div class="button-row"><button class="secondary" type="button" data-go="files">La libreria</button><button class="secondary" type="button" data-go="recommended">Consigliati</button></div></div>
  <p id="reading-list-loading" class="small muted" role="status">Caricamento della lista…</p>
  <div id="reading-list" class="stack"></div>
 </section>
 <section id="page-recommended" class="page" hidden>
- <div class="page-heading"><p class="eyebrow">IL MONDO DEI LIBRI, ADESSO</p><h1>Consigliati.</h1><p class="muted">Un’unica lista di novità e una Top 10 generale, da tutte le fonti.</p></div>
- <div class="recommendation-toolbar"><p id="recommendation-schedule" class="small muted">Aggiornamento ogni lunedì alle 08:00 · Europe/Rome</p><div class="button-row"><button class="secondary" type="button" data-go="reading-list">Da leggere</button><button id="recommendation-refresh" class="secondary">↻ Aggiorna ora</button><button class="text" data-go="downloads">Cerca altri libri →</button><button id="recommendation-settings" class="text">Fonti ⚙</button></div></div>
+ <div class="page-heading"><h1>Consigliati</h1></div>
+ <div class="recommendation-toolbar">
+  <div class="recommendation-toolbar-actions">
+   <button class="secondary" type="button" data-go="reading-list">Da leggere</button>
+   <button id="recommendation-refresh" class="secondary" type="button">↻ Aggiorna ora</button>
+   <button class="secondary" type="button" data-go="downloads">Cerca altri libri →</button>
+   <button id="recommendation-settings" class="secondary" type="button">Fonti ⚙</button>
+  </div>
+  <p id="recommendation-schedule" class="small muted">Scansione ogni 6 ore · Europe/Rome</p>
+ </div>
  <p id="recommendation-status" class="notice" role="status" aria-live="polite" hidden></p>
  <div class="filter-row recommendation-tabs" role="group" aria-label="Filtra i consigliati"><button class="filter active" data-recommendation-category="new" aria-pressed="true">Novità</button><button class="filter" data-recommendation-category="charts" aria-pressed="false">Classifica generale</button></div>
  <p id="recommendation-count" class="small muted"></p><div id="recommendation-books" class="recommendation-grid"></div>
 </section>
 <section id="page-downloads" class="page" hidden>
- <div class="page-heading"><p class="eyebrow">IL LIBRO CHE CERCHI</p><h1>Download.</h1><p class="muted">Cerca qualsiasi libro, anche fuori dalle classifiche.</p></div>
- <article class="card stack downloads-search-card"><div class="section-heading"><h2>Cerca un libro</h2><button id="downloads-connect" class="text" type="button">Collega Telegram →</button></div><p id="downloads-connection" class="small muted" role="status">Telegram da collegare.</p><div class="downloads-language-line"><p id="downloads-language" class="small muted"></p><button id="downloads-language-edit" class="text" type="button">Cambia lingua dei download →</button></div><div class="downloads-language-line"><p id="downloads-folder" class="small muted" data-untranslated></p><button id="downloads-folder-edit" class="text" type="button">Cambia cartella dei download →</button></div><form id="downloads-search-form" class="stack"><label for="downloads-query">Titolo, autore o ISBN<input id="downloads-query" name="query" type="search" minlength="2" maxlength="250" placeholder="Es. titolo del libro, nome dell’autore o ISBN" autocomplete="off" enterkeyhint="search" required></label><p class="small muted">Prima gli EPUB e i file più piccoli.</p><div class="button-row"><button id="downloads-search-submit" class="primary" type="submit" disabled>Scarica</button><button id="downloads-scan-isbn" class="secondary" type="button">Fotografa ISBN</button></div><input id="downloads-isbn-photo" type="file" accept="image/*" capture="environment" hidden><p id="downloads-isbn-status" class="small muted" role="status" hidden></p></form></article>
+ <div class="page-heading"><h1>Download</h1></div>
+ <article class="card stack downloads-search-card">
+  <div class="section-heading"><h2>Cerca un libro</h2><button id="downloads-connect" class="secondary" type="button">Collega Telegram →</button></div>
+  <p id="downloads-connection" class="small muted" role="status">Telegram da collegare.</p>
+  <form id="downloads-search-form" class="stack">
+   <div class="download-search-fields">
+    <label for="downloads-query">Titolo, autore o ISBN<input id="downloads-query" name="query" type="search" minlength="2" maxlength="250" placeholder="Es. titolo del libro, nome dell’autore o ISBN" autocomplete="off" enterkeyhint="search" required></label>
+    <div class="button-row"><button id="downloads-search-submit" class="primary" type="submit" disabled>Cerca</button><button id="downloads-scan-isbn" class="secondary" type="button">Fotografa ISBN</button></div>
+   </div>
+   <input id="downloads-isbn-photo" type="file" accept="image/*" capture="environment" hidden>
+   <p id="downloads-isbn-status" class="small muted" role="status" hidden></p>
+  </form>
+ </article>
  <p id="downloads-status" class="notice" role="status" aria-live="polite" hidden></p>
+ <div id="downloads-results" class="download-results"></div>
+ <button id="downloads-more" class="secondary" type="button" hidden>Mostra altri risultati</button>
+ <div class="download-preferences">
+   <div class="downloads-language-line"><p id="downloads-language" class="small muted"></p><button id="downloads-language-edit" class="text" type="button">Cambia lingua dei download →</button></div>
+   <div class="downloads-language-line"><p id="downloads-folder" class="small muted" data-untranslated></p><button id="downloads-folder-edit" class="text" type="button">Cambia cartella dei download →</button></div>
+ </div>
 </section>
 <section id="page-history" class="page" hidden>
- <div class="page-heading"><p class="eyebrow">OGNI PASSAGGIO, IN CHIARO</p><h1>Attività.</h1><p class="muted">Avanzamento ed esito reale di ogni documento.</p></div>
+ <div class="page-heading"><h1>Attività</h1></div>
  <p class="notice">“Accettato da SMTP” indica che il server e-mail ha preso in carico il file. Controlla il Kindle per verificarne la consegna.</p>
  <div id="job-list" class="stack" aria-live="polite"></div>
  <details class="card legacy"><summary>Registro precedente alla migrazione</summary><p class="small muted">Registrazioni dello script originale, conservate per evitare doppi invii. Potrebbero includere documenti marcati senza invio.</p><div id="legacy-list" class="stack"></div></details>
 </section>
 <section id="page-schedule" class="page" hidden>
- <div class="page-heading"><p class="eyebrow">AL TUO RITMO</p><h1>Programmazione.</h1><p class="muted">I nuovi file partono in automatico.</p></div>
+ <div class="page-heading"><h1>Programmazione</h1></div>
  <article class="card stack"><div class="section-heading"><h2>Invii automatici</h2><span id="schedule-badge" class="pill">—</span></div><p id="schedule-next" class="muted"></p>
  <form id="schedule-form" class="stack"><label>Controlla ogni (minuti)<input id="interval" name="interval" type="number" inputmode="numeric" min="5" max="10080" required><span class="small muted">Da 5 minuti a 7 giorni. La frequenza predefinita è 30 minuti.</span></label>
  <label class="check-line"><input id="paused" type="checkbox"><span>Metti in pausa gli invii automatici</span></label>
@@ -90,16 +138,22 @@
  <p class="notice">La pausa ferma l’aggiunta automatica alla coda. I file già in coda e gli invii manuali continuano. Gli invii falliti vengono riprovati al prossimo controllo; puoi anticiparli con “Riprova”. Gli esiti incerti richiedono un controllo manuale.</p>
 </section>
 <section id="page-settings" class="page" hidden>
- <div class="page-heading"><p class="eyebrow">TUTTO AL SUO POSTO</p><h1>Impostazioni.</h1><p class="muted">Collegamento Kindle e stato del servizio.</p></div>
- <article class="card stack" id="update-settings"><h2>Aggiornamenti di Kindle Sync</h2><p id="update-current" class="small muted"></p><p id="update-status" class="notice" role="status" aria-live="polite"></p><div class="button-row"><button id="update-check" class="secondary" type="button" hidden>Controlla aggiornamenti</button><button id="update-install" class="primary" type="button" hidden>Installa aggiornamento</button></div></article>
- <article class="card stack account-settings"><div><h2 id="current-account-name"></h2><p class="small muted">Libri e configurazione appartengono a questo account.</p></div><div class="button-row"><button id="change-account" class="secondary">Cambia account</button><button id="logout-account" class="secondary">Esci</button></div><button id="configure-mail" class="primary">Configura destinatario e mittente</button><button id="delete-account" class="danger" type="button">Elimina account</button></article>
+ <div class="page-heading"><h1 id="settings-heading">Impostazioni</h1></div>
+ <nav class="settings-index" aria-labelledby="settings-heading">
+  <button type="button" class="secondary" data-settings-target="settings-account">Account</button>
+  <button type="button" class="secondary" data-settings-target="settings-kindle">Kindle e posta</button>
+  <button type="button" class="secondary" data-settings-target="settings-downloads">Download</button>
+  <button type="button" class="secondary" data-settings-target="settings-sources">Fonti</button>
+  <button type="button" class="secondary" data-settings-target="settings-language">Lingua</button>
+  <button type="button" class="secondary" data-settings-target="update-settings">Aggiornamenti</button>
+ </nav>
+ <div id="settings-account" class="settings-group" tabindex="-1">
+  <h2 class="settings-section-title">Account</h2>
+ <article class="card stack account-settings"><div><h2 id="current-account-name"></h2><p class="small muted">Libri e configurazione appartengono a questo account.</p></div><div class="button-row"><button id="change-account" class="secondary">Cambia account</button><button id="logout-account" class="secondary">Esci</button></div><button id="delete-account" class="danger" type="button">Elimina account</button></article>
  <form id="account-password-form" class="card stack"><h2>Modifica password dell’account</h2><label id="account-current-password-label">Password attuale<input id="account-current-password" type="password" autocomplete="current-password" maxlength="256"></label><label>Nuova password<input id="account-new-password" type="password" autocomplete="new-password" maxlength="256"><span class="small muted">Lascia vuota la nuova password per aprire questo account senza password.</span></label><label>Ripeti la nuova password<input id="account-new-password-confirm" type="password" autocomplete="new-password" maxlength="256"></label><p id="account-password-error" class="error-text" role="alert" hidden></p><button id="account-password-save" class="primary">Salva password</button></form>
- <article id="recommendation-source-settings" class="card stack"><div><h2>Fonti</h2><p class="small muted">Scegli i siti per i Consigliati. Puoi aggiungere classifiche IBS, Feltrinelli, Mondadori, Goodreads, pagine con dati Book o feed RSS/Atom dedicati ai libri.</p></div><p class="small muted">Scansione ogni lunedì alle 08:00 · Europe/Rome. Massimo 50 novità e una Top 10 generale.</p><form id="recommendation-sources-form" class="stack"><ul id="recommendation-sources" class="recommendation-source-list" aria-label="Fonti"></ul><button id="recommendation-source-add" class="secondary" type="button">＋ Aggiungi fonte</button><p id="recommendation-sources-error" class="error-text" role="alert" hidden></p><button class="primary" type="submit">Salva fonti</button></form></article>
- <article id="download-language-settings" class="card stack"><div><h2>Lingua dei download</h2><p class="small muted">Di default segue la lingua dell’app. Puoi scegliere una lingua diversa solo per i libri scaricati.</p></div><form id="download-language-form" class="stack"><label>In che lingua vuoi i download?<select id="download-language-select" name="language"><option value="app">Uguale alla lingua dell’app (automatica)</option><option value="it" data-untranslated>Italiano</option><option value="en" data-untranslated>English</option><option value="fr" data-untranslated>Français</option><option value="es" data-untranslated>Español</option><option value="zh" data-untranslated>中文</option><option value="ru" data-untranslated>Русский</option></select></label><p id="download-language-summary" class="small muted" role="status"></p><p id="download-language-error" class="error-text" role="alert" hidden></p><button class="primary" type="submit">Salva lingua dei download</button></form></article>
- <article id="download-folder-settings" class="card stack"><h2>Cartella dei download</h2><form id="download-folder-form" class="stack"><label>Sottocartella<input id="download-folder-input" maxlength="240" placeholder="Es. Romanzi/2026" autocomplete="off"><span class="small muted">Lascia vuoto per usare la cartella principale dei download. La sottocartella viene creata se manca.</span></label><p id="download-folder-summary" class="small muted" role="status" data-untranslated></p><p id="download-folder-error" class="error-text" role="alert" hidden></p><button class="primary" type="submit">Salva cartella</button></form></article>
- <article id="telegram-settings" class="card stack"><div><h2>Scarica libri</h2><p class="small muted">Collega il tuo account Telegram al bot dei libri.</p></div><p id="telegram-status" class="notice" role="status">Telegram da collegare.</p><p class="small"><a href="https://my.telegram.org/apps" target="_blank" rel="noopener noreferrer">Ottieni API ID e API hash da Telegram ↗</a></p><form id="telegram-connect-form" class="stack" autocomplete="off"><label>Bot Telegram<input name="bot" placeholder="nome_bot" maxlength="64" required></label><div class="form-pair"><label>API ID<input name="api_id" inputmode="numeric" pattern="[0-9]+" required></label><label>API hash<input name="api_hash" type="password" autocomplete="new-password" maxlength="32" required></label></div><label>Numero Telegram<input name="phone" type="tel" placeholder="+39…" autocomplete="off" required></label><button class="primary">Collega Telegram</button></form><form id="telegram-code-form" class="stack" autocomplete="off" hidden><label>Codice ricevuto su Telegram<input name="code" inputmode="numeric" autocomplete="off" maxlength="12"></label><label>Password Telegram (se richiesta)<input name="password" type="password" autocomplete="new-password" maxlength="256"></label><button class="primary">Conferma accesso</button></form><button id="telegram-disconnect" class="secondary" hidden>Scollega Telegram</button><p id="telegram-error" class="error-text" role="alert" hidden></p></article>
- <article class="card stack language-settings"><div><h2>Lingua</h2><p class="small muted">Scegli la lingua dell’app. La preferenza viene ricordata su questo dispositivo.</p></div><div class="language-options" data-language-options></div><p id="language-settings-error" class="error-text" role="alert" hidden></p></article>
- <article class="card stack"><h2>Kindle e posta</h2><p id="config-summary" class="small muted"></p><p class="small muted">I valori salvati restano nascosti. Compila soltanto quelli che vuoi sostituire.</p>
+ </div>
+ <div id="settings-kindle" class="settings-group" tabindex="-1">
+ <article class="card stack"><h2>Kindle e posta</h2><p id="config-summary" class="small muted"></p><button id="configure-mail" class="primary">Configura destinatario e mittente</button><p class="small muted">I valori salvati restano nascosti. Compila soltanto quelli che vuoi sostituire.</p>
  <form id="config-form" class="stack" autocomplete="off">
  <label>Indirizzo Send to Kindle<input name="kindle_address" type="email" inputmode="email" autocapitalize="none" spellcheck="false" placeholder="Nuovo indirizzo @kindle.com" autocomplete="off"></label>
  <label>Server SMTP<input name="smtp_host" autocapitalize="none" spellcheck="false" placeholder="Nuovo server, es. smtp.gmail.com" autocomplete="off"></label>
@@ -109,17 +163,41 @@
  <button class="primary" type="submit">Salva impostazioni</button></form><button id="check-config" class="secondary">Verifica connessione SMTP</button><p id="check-result" class="small" role="status"></p>
  </article>
  <details class="card"><summary>Come collegare il Kindle</summary><p>In Amazon, apri Gestisci contenuti e dispositivi → Preferenze → Impostazioni documenti personali. Trova l’indirizzo Send to Kindle e autorizza l’e-mail del mittente.</p><p>Per Gmail usa una password per app e l’autenticazione a due fattori. Server smtp.gmail.com, porta 465 e TLS diretto.</p><p>Per aggiungere questa app alla schermata Home, usa la funzione del browser per creare un collegamento.</p></details>
- <article class="card stack"><h2>Diagnostica</h2><div id="diagnostics"></div><h3>Log essenziali</h3><div id="logs" class="log-list"></div></article>
+ </div>
+ <div id="settings-downloads" class="settings-group" tabindex="-1">
+  <h2 class="settings-section-title">Download</h2>
+ <article id="telegram-settings" class="card stack"><div><h2>Scarica libri</h2><p class="small muted">Collega il tuo account Telegram al bot dei libri.</p></div><p id="telegram-status" class="notice" role="status">Telegram da collegare.</p><p class="small"><a href="https://my.telegram.org/apps" target="_blank" rel="noopener noreferrer">Ottieni API ID e API hash da Telegram ↗</a></p><form id="telegram-connect-form" class="stack" autocomplete="off"><label>Bot Telegram<input name="bot" placeholder="nome_bot" maxlength="64" required></label><div class="form-pair"><label>API ID<input name="api_id" inputmode="numeric" pattern="[0-9]+" required></label><label>API hash<input name="api_hash" type="password" autocomplete="new-password" maxlength="32" required></label></div><label>Numero Telegram<input name="phone" type="tel" placeholder="+39…" autocomplete="off" required></label><button class="primary">Collega Telegram</button></form><form id="telegram-code-form" class="stack" autocomplete="off" hidden><label>Codice ricevuto su Telegram<input name="code" inputmode="numeric" autocomplete="off" maxlength="12"></label><label>Password Telegram (se richiesta)<input name="password" type="password" autocomplete="new-password" maxlength="256"></label><button class="primary">Conferma accesso</button></form><button id="telegram-disconnect" class="secondary" hidden>Scollega Telegram</button><p id="telegram-error" class="error-text" role="alert" hidden></p></article>
+ <article id="download-language-settings" class="card stack"><div><h2>Lingua dei download</h2><p class="small muted">Di default segue la lingua dell’app. Puoi scegliere una lingua diversa solo per i libri scaricati.</p></div><form id="download-language-form" class="stack"><label>In che lingua vuoi i download?<select id="download-language-select" name="language"><option value="app">Uguale alla lingua dell’app (automatica)</option><option value="it" data-untranslated>Italiano</option><option value="en" data-untranslated>English</option><option value="fr" data-untranslated>Français</option><option value="es" data-untranslated>Español</option><option value="zh" data-untranslated>中文</option><option value="ru" data-untranslated>Русский</option></select></label><p id="download-language-summary" class="small muted" role="status"></p><p id="download-language-error" class="error-text" role="alert" hidden></p><button class="primary" type="submit">Salva lingua dei download</button></form></article>
+ <article id="download-folder-settings" class="card stack"><h2>Cartella dei download</h2><form id="download-folder-form" class="stack"><label>Sottocartella<input id="download-folder-input" maxlength="240" placeholder="Es. Romanzi/2026" autocomplete="off"><span class="small muted">Lascia vuoto per usare la cartella principale dei download. La sottocartella viene creata se manca.</span></label><p id="download-folder-summary" class="small muted" role="status" data-untranslated></p><p id="download-folder-error" class="error-text" role="alert" hidden></p><button class="primary" type="submit">Salva cartella</button></form></article>
+ </div>
+ <div id="settings-sources" class="settings-group" tabindex="-1">
+ <article id="recommendation-source-settings" class="card stack"><div><h2>Fonti</h2><p class="small muted">Scegli i siti per i Consigliati. Puoi aggiungere classifiche IBS, Feltrinelli, Mondadori, Goodreads, pagine con dati Book o feed RSS/Atom dedicati ai libri.</p></div><p class="small muted">Scansione ogni 6 ore · Europe/Rome</p><form id="recommendation-sources-form" class="stack"><ul id="recommendation-sources" class="recommendation-source-list" aria-label="Fonti"></ul><button id="recommendation-source-add" class="secondary" type="button">＋ Aggiungi fonte</button><p id="recommendation-sources-error" class="error-text" role="alert" hidden></p><button class="primary" type="submit">Salva fonti</button></form></article>
+ </div>
+ <div id="settings-language" class="settings-group" tabindex="-1">
+ <article class="card stack language-settings"><div><h2>Lingua</h2><p class="small muted">Scegli la lingua dell’app. La preferenza viene ricordata su questo dispositivo.</p></div><div class="language-options" data-language-options></div><p id="language-settings-error" class="error-text" role="alert" hidden></p></article>
+ </div>
+ <div class="settings-group">
+ <article class="card stack" id="update-settings" tabindex="-1"><h2>Aggiornamenti di Kindle Sync</h2><p id="update-current" class="small muted"></p><p id="update-status" class="notice" role="status" aria-live="polite"></p><div class="button-row"><button id="update-check" class="secondary" type="button" hidden>Controlla aggiornamenti</button><button id="update-install" class="primary" type="button" hidden>Installa aggiornamento</button></div></article>
+ </div>
+ <section id="settings-other" class="settings-group" aria-labelledby="settings-other-heading">
+  <h2 id="settings-other-heading">Altro</h2>
+ <nav class="more-links" aria-labelledby="settings-other-heading">
+  <button type="button" class="secondary" data-go="history">{{ ui_icon('M20.5 12a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0ZM12 7v5l3 1.75') }}Attività</button>
+  <button type="button" class="secondary" data-go="schedule">{{ ui_icon('M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v12A1.5 1.5 0 0 1 19 20.5H5A1.5 1.5 0 0 1 3.5 19V7A1.5 1.5 0 0 1 5 5.5ZM7.5 3.5v4m9-4v4m-13 2.5h17M8 15.5h2m3 0h3') }}Orari</button>
+ </nav>
+  <details id="settings-service" class="card">
+   <summary>Diagnostica</summary>
+   <div class="stack diagnostics-content"><div id="diagnostics"></div><h3>Log essenziali</h3><div id="logs" class="log-list"></div></div>
+  </details>
+ </section>
 </section>
 </main>
 <nav class="bottom-nav" aria-label="Navigazione principale">
- <button data-go="home" class="active" aria-current="page"><span aria-hidden="true">⌂</span>Home</button>
- <button data-go="files"><span aria-hidden="true">▤</span>File</button>
- <button data-go="recommended"><span aria-hidden="true">✧</span>Consigliati</button>
- <button data-go="downloads"><span aria-hidden="true">⇩</span>Download</button>
- <button data-go="history"><span aria-hidden="true">◷</span>Attività</button>
- <button data-go="schedule"><span aria-hidden="true">◴</span>Orari</button>
- <button data-go="settings"><span aria-hidden="true">⚙</span>Altro</button>
+ <button data-go="home" class="active" aria-current="page">{{ ui_icon('M3 10.5 12 3l9 7.5M5.5 9v11h5v-5.5h3V20h5V9') }}Home</button>
+ <button data-go="files">{{ ui_icon('M7 3.5h9.5L20 7v13.5H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2ZM16 3.5V8h4M8.5 11.5h8M8.5 15.5h8') }}File</button>
+ <button data-go="recommended">{{ ui_icon('M11 3.5c.8 4.5 2.5 6.2 7 7-4.5.8-6.2 2.5-7 7-.8-4.5-2.5-6.2-7-7 4.5-.8 6.2-2.5 7-7ZM19 14.5v5M16.5 17h5') }}Consigliati</button>
+ <button data-go="downloads">{{ ui_icon('M12 3.5v12m-4-4 4 4 4-4M4.5 15v4.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15') }}Download</button>
+ <button data-go="settings">{{ ui_icon('M4.5 7h15m-15 5h15m-15 5h15M9 5v4m6 1v4m-5 1v4') }}Impostazioni</button>
 </nav>
 </div>
 <dialog id="download-dialog" class="download-dialog"><div class="section-heading"><h2>Scarica libri</h2><button id="download-close" class="secondary" aria-label="Chiudi">×</button></div><p id="download-title" data-untranslated></p><p id="download-status" class="notice" role="status" aria-live="polite"></p><p class="small"><a id="download-bot-link" href="https://t.me/" target="_blank" rel="noopener noreferrer">Apri il bot su Telegram ↗</a></p></dialog>
