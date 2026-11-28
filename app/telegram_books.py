@@ -465,11 +465,9 @@ def download(token):
             await client.download_media(message,file=str(temp),progress_callback=progress)
             c.validate(temp,'book.'+option['format'])
             saved=install_file(temp,download_name(temp,filename,option),language)
-            if option.get('reading_list_id'):
-                register_download(saved,option['reading_list_id'])
-            else:
-                register_download(saved)
+            file_id=register_download(saved,option.get('reading_list_id'))
             folder=saved.parent.relative_to(c.download_dir()).as_posix()
-            return dict(name=saved.name,destination=download_destination('' if folder=='.' else folder),format=option['format'])
+            return dict(name=saved.name,destination=download_destination('' if folder=='.' else folder),
+                        format=option['format'],file_id=file_id)
         finally:temp.unlink(missing_ok=True)
     return perform(receive,timeout=110)

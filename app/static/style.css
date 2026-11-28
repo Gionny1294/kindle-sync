@@ -24,12 +24,24 @@
 .discover-teaser{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;background:#eef1e4}.discover-teaser h2{margin:8px 0}.recommendation-source-row{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}.recommendation-source-row legend{padding:0 6px;font-size:12px;color:var(--muted)}#recommendation-source-settings,#telegram-settings{margin:20px 0;scroll-margin-top:24px}.download-dialog{border:1px solid var(--line);border-radius:20px;padding:24px;width:min(520px,calc(100% - 32px));max-height:85dvh;overflow:auto;background:var(--paper);color:var(--ink)}.download-dialog::backdrop{background:#102b26a6}.download-dialog .notice{margin:18px 0}.download-dialog>p{overflow-wrap:anywhere}.download-dialog .full{white-space:pre-line;text-align:left}
 @media(max-width:380px){.bottom-nav button{font-size:9px}.discover-teaser{flex-direction:column;align-items:flex-start}}
 
-.recommendation-toolbar {
+.recommendation-controls {
     display: grid;
-    gap: 10px;
-    margin-bottom: 20px;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: center;
+    gap: 8px;
+    max-width: 420px;
+    margin: 12px 0;
 }
-.recommendation-toolbar-actions,
+.recommendation-controls #recommendation-refresh {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    min-height: 44px;
+    padding: 0;
+    background: transparent;
+    color: var(--green);
+}
+#recommendation-refresh:hover:not(:disabled) { color: #376957; }
 .recommendation-tabs,
 .recommendation-actions {
     display: grid;
@@ -37,9 +49,8 @@
     grid-auto-rows: 1fr;
     gap: 8px;
 }
-.recommendation-toolbar-actions button,
 .recommendation-tabs button,
-.recommendation-actions > * {
+.recommendation-actions button {
     display: grid;
     place-items: center;
     min-width: 0;
@@ -51,7 +62,6 @@
     text-align: center;
     overflow-wrap: anywhere;
 }
-.recommendation-tabs { margin: 16px 0 12px; }
 .recommendation-grid {
     display: grid;
     gap: 16px;
@@ -70,9 +80,28 @@
     align-items: start;
     gap: clamp(12px, 3vw, 18px);
 }
-.recommendation-cover { position: relative; }
+.book-cover-column {
+    display: grid;
+    align-content: start;
+    justify-items: center;
+    flex-shrink: 0;
+}
+.book-source-link {
+    max-width: 100%;
+    min-height: 24px;
+    padding-block: 4px;
+    color: var(--green);
+    font-size: 12px;
+    line-height: 1.35;
+    text-align: center;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    overflow-wrap: anywhere;
+}
+.book-source-link:hover { color: #376957; }
+.recommendation-cover { position: relative; width: clamp(68px, 18vw, 84px); }
 .recommendation-cover .book-cover {
-    width: clamp(68px, 18vw, 84px);
+    width: 100%;
     height: auto;
     aspect-ratio: 2 / 3;
     border-radius: 4px 7px 7px 4px;
@@ -183,24 +212,11 @@
     place-items: center;
     padding: 0;
 }
-.recommendation-actions {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-top: auto;
-}
-.recommendation-actions > * { min-height: 54px; border-radius: 12px; }
-.recommendation-link { border: 1px solid var(--line); }
-.recommendation-link:hover,
-.recommendation-actions button.secondary:hover,
-.recommendation-toolbar-actions button:not(:disabled):hover { background: #e4ece0; }
+.recommendation-actions { margin-top: auto; }
+.recommendation-actions button { border-radius: 12px; }
+.recommendation-actions button.secondary:hover { background: #e4ece0; }
 .recommendation-actions button.primary:hover { background: #24564d; }
 
-@media (max-width: 480px) {
-    .recommendation-actions > * { min-height: 60px; padding-inline: 6px; }
-}
-@media (min-width: 640px) {
-    .recommendation-toolbar-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-    .recommendation-tabs { max-width: 380px; }
-}
 @media (min-width: 760px) {
     .recommendation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     @supports (grid-template-rows: subgrid) {
@@ -372,6 +388,20 @@
     flex: 1 0 auto;
     font-size: 13px;
 }
+#reading-queue .book-cover-column { width: clamp(64px, 18vw, 92px); }
+#reading-queue .book-cover {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 2 / 3;
+    object-fit: contain;
+}
+#reading-queue .reading-list-read, #downloads-results .reading-list-read {
+    width: fit-content;
+    min-height: 44px;
+    font-size: 14px;
+    cursor: pointer;
+}
+#reading-queue .book-actions { margin-top: 2px; }
 
 #shell .downloads-search-card { max-width: none; }
 .download-search-fields { display: grid; gap: 10px; }
@@ -416,6 +446,7 @@
 .download-preview-info h2 { font: 400 clamp(23px, 4vw, 32px)/1.12 Georgia, serif; }
 .download-preview-info .muted { font-size: 14px; }
 .download-preview-info .rating-score.muted { font-size: 12px; font-weight: 500; white-space: normal; }
+.catalogue-in-library { justify-self: start; }
 .download-preview-description {
     display: grid;
     gap: 6px;
@@ -424,8 +455,10 @@
     padding-top: 12px;
 }
 .download-result-card .synopsis-disclosure { max-width: 75ch; }
-.download-preview-actions { display: grid; gap: 10px; margin-top: 16px; }
-.download-preview-actions p { overflow-wrap: anywhere; }
+.download-preview-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.download-preview-actions button { flex: 1 1 auto; min-height: 44px; }
+.download-preview-actions [data-catalogue-read-mark] { flex-basis: 100%; }
+.download-preview-actions p { flex-basis: 100%; overflow-wrap: anywhere; }
 
 #page-history #legacy-list { margin-top: 12px; }
 #page-schedule > .card { max-width: 700px; }
@@ -471,7 +504,8 @@
 #settings-service summary { cursor: pointer; font-weight: 650; }
 .diagnostics-content { margin-top: 15px; }
 @media (max-width: 600px) {
-    #shell .bottom-nav button { font-size: clamp(9px, 2.75vw, 11px); }
+    #shell .bottom-nav button { font-size: clamp(9px, 2.6vw, 11px); }
+    #shell .bottom-nav button:is([data-go="recommended"], [data-go="settings"]) { flex-grow: 1.2; }
 }
 
 @media (min-width: 760px) {
@@ -493,8 +527,8 @@
     .download-results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .download-result-card { display: flex; flex-direction: column; }
     .download-preview-description { margin-bottom: 16px; }
-    .download-preview-actions { margin-top: auto; justify-items: start; }
-    .download-preview-actions button { min-width: 150px; }
+    .download-preview-actions { margin-top: auto; }
+    .download-preview-actions button { flex: 0 1 auto; min-width: 110px; }
     #settings-account, #settings-downloads { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
     .settings-section-title, #telegram-settings { grid-column: 1 / -1; }
 }

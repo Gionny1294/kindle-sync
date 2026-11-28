@@ -15,7 +15,7 @@
  const synopsisSizeObserver=new ResizeObserver(entries=>{
   for(const {target} of entries)measureSynopsis(target);
  });
- const names={new:'Novità',charts:'Classifica generale'};
+ const names={new:'Novità',charts:'Classifica'};
  const date=value=>value?new Date(value*1000).toLocaleString(window.KindleI18n.locale,{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):T('Mai aggiornata');
  function notice(id,message){el(id).textContent=T(message);el(id).hidden=!message;}
  function measureSynopsis(box){
@@ -56,14 +56,7 @@
   const date=new Date(value.length===7?value+'-01T12:00:00':value+'T12:00:00');
   return T('Uscita: {date}',{date:date.toLocaleDateString(window.KindleI18n.locale,value.length===7?{month:'long',year:'numeric'}:{day:'numeric',month:'short',year:'numeric'})});
  }
- function ratingMarkup(book){
-  const score=typeof book.rating_value==='number'?book.rating_value.toLocaleString(window.KindleI18n.locale,{maximumFractionDigits:2}):null;
-  if(!score)return `<span class="small muted">${E(T('Valutazione non ancora disponibile'))}</span>`;
-  const count=Number.isInteger(book.rating_count)?T('{count} valutazioni',{count:book.rating_count.toLocaleString(window.KindleI18n.locale)}):'';
-  const url=book.rating_url||book.url;
-  return `<span class="rating-score" aria-label="${E(T('Valutazione generale: {score} su 5',{score}))}">★ ${E(score)}<small>/5</small></span>
-   ${url?`<a class="rating-source" href="${E(url)}" target="_blank" rel="noopener noreferrer" data-untranslated>${E(book.rating_source||'')}${count?' · '+E(count):''} ↗</a>`:''}`;
- }
+ function ratingMarkup(book){return bookRatingMarkup(book,{placeholder:true});}
  function metadata(book){
   return `<div class="recommendation-metadata">
    <p class="recommendation-publication">${book.published?`<a href="${E(book.published_url||book.url)}" target="_blank" rel="noopener noreferrer">${E(publication(book.published))}</a>`:E(publication(''))}</p>
@@ -73,7 +66,11 @@
  function bookCard(book,index){
   return `<article class="card recommendation-card">
    <div class="recommendation-header">
-    <div class="recommendation-cover"><img class="book-cover" src="${E(book.cover_url||'/static/cover-placeholder.svg')}" alt="" loading="lazy" width="84" height="126">${category==='charts'?`<span class="recommendation-rank">${index+1}</span>`:''}</div>
+    <div class="recommendation-cover book-cover-column">
+     <img class="book-cover" src="${E(book.cover_url||'/static/cover-placeholder.svg')}" alt="" loading="lazy" width="84" height="126">
+     ${category==='charts'?`<span class="recommendation-rank">${index+1}</span>`:''}
+     ${bookSourceLink(book.url)}
+    </div>
     <div class="recommendation-info">
      <h2 class="file-title" data-untranslated>${E(book.title)}</h2>
      <p class="small muted" data-untranslated>${E(book.author)}</p>
@@ -86,7 +83,6 @@
     <button class="synopsis-toggle" type="button" aria-expanded="false" aria-label="Leggi la trama" aria-controls="recommendation-synopsis-${index}" hidden>…</button>
    </div>
    <div class="recommendation-actions">
-    <a class="recommendation-link" href="${E(book.url)}" target="_blank" rel="noopener noreferrer">Vedi il libro ↗</a>
     <button class="primary" type="button" data-recommendation-download="${index}">Scarica</button>
     ${readingListButton('recommendation',book.url,savedRecommendation(book))}
    </div>
@@ -142,7 +138,7 @@
   notice('recommendation-status',data.refreshing?'Aggiornamento delle fonti in corso…':!active.length?'Attiva o aggiungi una fonte nelle impostazioni.':errors.length?'Alcune fonti non sono disponibili. Gli ultimi risultati restano visibili con la loro data.':'');
   el('recommendation-schedule').textContent=T('Prossima scansione: {date} · Europe/Rome',{date:new Date(data.next_run*1000).toLocaleString(window.KindleI18n.locale,{weekday:'long',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Rome'})});
   const bookList = el('recommendation-books');
-  const markup=window.KindleI18n.html(books.map(bookCard).join('')||`<div class="empty"><strong>${category==='new'?'Nessuna uscita trovata per oggi o ieri.':'Nessun titolo disponibile.'}</strong>Attiva le fonti o premi Aggiorna ora per cercare nuovi libri.</div>`);
+  const markup=window.KindleI18n.html(books.map(bookCard).join('')||`<div class="empty"><strong>${category==='new'?'Nessuna uscita trovata per oggi o ieri.':'Nessun titolo disponibile.'}</strong></div>`);
   if(bookMarkup!==markup){
    const expanded=new Set();
    for(const node of bookList.querySelectorAll('[data-recommendation-synopsis]')){
@@ -194,7 +190,6 @@
    if(!data.refreshing)window.toast('Attendi un minuto tra due aggiornamenti.');
   }catch(error){notice('recommendation-status',error.message);el('recommendation-refresh').disabled=false;}
  };
- el('recommendation-settings').onclick=()=>{location.hash='settings';setTimeout(()=>el('recommendation-source-settings').scrollIntoView({block:'start',behavior:'smooth'}),0);};
  el('recommendation-source-add').onclick=()=>{if(el('recommendation-sources').children.length>=12){notice('recommendation-sources-error','Puoi aggiungere fino a 12 fonti.');return;}sourceDirty=true;row();el('recommendation-sources').lastElementChild.querySelector('input').focus();};
  el('recommendation-sources-form').addEventListener('input',()=>sourceDirty=true);
  el('recommendation-sources-form').addEventListener('click',event=>{if(event.target.closest('.source-remove')){sourceDirty=true;event.target.closest('li').remove();}});
@@ -282,18 +277,22 @@
     <div class="download-preview-info">
      <h2 tabindex="-1" data-untranslated>${E(book.title)}</h2>
      ${book.author?`<p class="muted" data-untranslated>${E(book.author)}</p>`:''}
-     <div class="recommendation-rating">${ratingMarkup(book)}</div>
+     <span class="pill catalogue-in-library" data-catalogue-library hidden>Già in libreria</span>
+     ${book.local_only?'':`<div class="recommendation-rating">${ratingMarkup(book)}</div>`}
     </div>
    </div>
-   <div class="download-preview-description">
+   ${book.local_only?'':`<div class="download-preview-description">
     <h3>Trama</h3>
     <div class="synopsis-disclosure muted">
      <p id="catalogue-synopsis-${E(book.id)}" class="synopsis-text">Caricamento della trama…</p>
      <button class="synopsis-toggle" type="button" aria-expanded="false" aria-label="Leggi la trama" aria-controls="catalogue-synopsis-${E(book.id)}" hidden>…</button>
     </div>
-   </div>
+   </div>`}
    <div class="download-preview-actions">
     <button class="primary" type="button" data-catalogue-download>Scarica</button>
+    <button class="primary" type="button" data-catalogue-open hidden>Leggi</button>
+    ${book.url?readingListButton('catalogue',book.id,savedRecommendation(book)):''}
+    <div data-catalogue-read-mark hidden></div>
     <p class="small catalogue-download-status" role="status" hidden></p>
    </div>
   </article>`;
@@ -302,8 +301,11 @@
   const results=el('downloads-results'),start=results.children.length;
   const books=catalogue.books.slice(start,start+visibleCatalogueBatch);
   results.insertAdjacentHTML('beforeend',window.KindleI18n.html(books.map(catalogueCard).join('')));
-  for(const card of [...results.children].slice(start))catalogueObserver.observe(card);
+  for(const [index,card] of [...results.children].slice(start).entries()){
+   if(!books[index].local_only)catalogueObserver.observe(card);
+  }
   el('downloads-more').hidden=!(catalogue.more||results.children.length<catalogue.books.length);
+  refreshCatalogueReadingList();
   searchControls();
   if(books.length&&!el('page-downloads').hidden)results.children[start].querySelector('h2').focus();
  }
@@ -326,7 +328,43 @@
    }
   }finally{loadingCatalogueDetails=false;}
  }
+ function refreshCatalogueReadingList(){
+  if(!catalogue)return;
+  const cards=el('downloads-results').children;
+  for(let index=0;index<cards.length;index++){
+   const card=cards[index],book=catalogue.books[index];
+   const file=book.file_id&&state?.files.find(file=>file.id===book.file_id&&file.available);
+   const saved=state?.reading_list_files[book.file_id]||savedRecommendation(book)||'';
+   const inLibrary=card.querySelector('[data-catalogue-library]');
+   inLibrary.hidden=!file;
+   inLibrary.textContent=T('Già in libreria');
+   const open=card.querySelector('[data-catalogue-open]');
+   open.hidden=!file;
+   open.dataset.read=file?.id||'';
+   open.textContent=T('Leggi');
+   const download=card.querySelector('[data-catalogue-download]');
+   download.hidden=Boolean(file||book.local_only);
+   download.textContent=T('Scarica');
+   const button=card.querySelector('[data-reading-list-source="catalogue"]');
+   if(button){
+    button.hidden=Boolean(file);
+    button.dataset.readingListId=saved;
+    const label=T(readingListLabel(saved));
+    if(button.textContent!==label)button.textContent=label;
+   }
+   const mark=card.querySelector('[data-catalogue-read-mark]');
+   const target=file||readMarkState(`reading-list/${saved}`);
+   const signature=JSON.stringify([file?.id,saved,window.KindleI18n.language]);
+   if(mark.dataset.signature!==signature){
+    mark.innerHTML=target?window.KindleI18n.html(readingMarkCheckbox(target,book.title,file?'files':'reading-list')):'';
+    mark.dataset.signature=signature;
+   }
+   mark.hidden=!target;
+  }
+  syncReadingMarks(el('downloads-results'));
+ }
  function retranslateCatalogue(){
+  refreshCatalogueReadingList();
   for(const box of el('downloads-results').querySelectorAll('.synopsis-disclosure')){
    setSynopsisExpanded(box,box.classList.contains('is-expanded'));
    if(!box.classList.contains('has-synopsis')){
@@ -335,7 +373,6 @@
    }
    const card=box.closest('.download-result-card');
    card.querySelector('h3').textContent=T('Trama');
-   card.querySelector('[data-catalogue-download]').textContent=T('Scarica');
   }
  }
  async function downloadEdition(option,isCurrent,showStatus){
@@ -345,6 +382,7 @@
   showStatus(downloadMessage(saved));
   window.toast('Libro scaricato.');
   await refresh();
+  return saved;
  }
  async function downloadFirst(search,isCurrent,showStatus,emptyMessage){
   showStatus(T('Ricerca delle edizioni nella lingua scelta…'));
@@ -366,8 +404,9 @@
    if(!isCurrent())return;
    catalogue.page=page;catalogue.more=result.more;catalogue.authorSearch=result.author_search;
    for(const book of result.books){
-    if(!catalogue.keys.has(book.key)){
+    if(!catalogue.keys.has(book.key)&&(!book.file_id||!catalogue.files.has(book.file_id))){
      catalogue.keys.add(book.key);
+     if(book.file_id)catalogue.files.add(book.file_id);
      catalogue.books.push(book);
     }
    }
@@ -383,7 +422,7 @@
   const query=el('downloads-query').value.trim();
   if(!query)return;
   resetDownloadSearch();
-  catalogue={query,page:0,more:false,authorSearch:false,books:[],keys:new Set()};
+  catalogue={query,page:0,more:false,authorSearch:false,books:[],keys:new Set(),files:new Set()};
   fetchCataloguePage();
  };
  el('downloads-more').onclick=()=>{
@@ -400,6 +439,7 @@
    return;
   }
   const card=button.closest('.download-result-card'),status=card.querySelector('.catalogue-download-status');
+  const book=catalogue.books.find(book=>book.id===card.dataset.catalogueBook);
   const accountEpoch=window.KindleAccounts.epoch;
   const isCurrent=()=>card.isConnected&&accountEpoch===window.KindleAccounts.epoch;
   const showStatus=message=>{status.textContent=T(message);status.hidden=!message;};
@@ -408,10 +448,22 @@
    showStatus('Ricerca delle edizioni nella lingua scelta…');
    const result=await request('/api/downloads/catalogue/edition',{id:card.dataset.catalogueBook});
    if(!isCurrent())return;
+   if(result.file_id){
+    book.file_id=result.file_id;
+    catalogue.files.add(result.file_id);
+    await refresh();
+    if(isCurrent()){refreshCatalogueReadingList();showStatus('');}
+    return;
+   }
    const [option]=result.options;
    if(!option){showStatus('Nessuna edizione nella lingua scelta. Prova un altro titolo, autore o ISBN.');return;}
-   await downloadEdition(option,isCurrent,showStatus);
-   if(isCurrent())button.dataset.downloaded='true';
+   const saved=await downloadEdition(option,isCurrent,showStatus);
+   if(isCurrent()){
+    book.file_id=saved?.file_id;
+    button.dataset.downloaded=String(!book.file_id);
+    if(book.file_id)catalogue.files.add(book.file_id);
+    refreshCatalogueReadingList();
+   }
   }catch(error){if(isCurrent()&&error.name!=='AbortError')showStatus(error.message);}
   finally{if(isCurrent()){catalogueDownloading=false;searchControls();}}
  });
@@ -435,6 +487,7 @@
   }catch(error){if(isCurrent()&&error.name!=='AbortError')showStatus(T(error.message));}
  }
  window.addEventListener('kindle:saved-download',event=>download(event.detail,event.detail.id));
+ window.addEventListener('kindle:state',refreshCatalogueReadingList);
  window.addEventListener('kindle:reading-list',()=>{
   const focused=document.activeElement;
   const key=focused?.dataset.readingListKey;

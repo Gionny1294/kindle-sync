@@ -23,11 +23,11 @@ function setTopStatus(message,mode){
 
 function go(next,scroll=true){
  if(next.startsWith('read=')){
-  window.openBook(next.slice(5),page==='reading-list'?'reading-list':'files');
+  window.openBook(next.slice(5),['reading-list','bookcases','downloads'].includes(page)?page:'files');
   return;
  }
  window.closeBook();
- if(!['home','files','reading-list','recommended','downloads','history','schedule','settings'].includes(next))next='home';
+ if(!['home','files','reading-list','bookcases','recommended','downloads','history','schedule','settings'].includes(next))next='home';
  page=next;
  const navPage=['history','schedule'].includes(page)?'settings':page;
  $$('.page').forEach(section=>section.hidden=section.id!=='page-'+page);
@@ -46,6 +46,24 @@ function normalized(value){return String(value||'').normalize('NFD').replace(/[\
 function visibleFiles(){if(!state)return [];const words=normalized($('#search').value).trim().split(/\s+/).filter(Boolean),folder=$('#folder-filter').value,format=$('#format-filter').value;return state.files.filter(f=>words.every(word=>normalized(f.name+' '+f.folder).includes(word))&&(!folder||f.folder===folder||f.folder.startsWith(folder+'/'))&&(!format||f.format===format)&&(filter==='all'||filter==='pending'&&!f.sent_at&&f.available||filter==='problems'&&(['failed','uncertain'].includes(f.status)||!f.available)));}
 function renderLibraryFilters(){for(const [selector,key,label] of [['#folder-filter','folder','Tutte le cartelle'],['#format-filter','format','Tutti i formati']]){const el=$(selector),values=[...new Set(state.files.map(f=>f[key]))].sort((a,b)=>a.localeCompare(b,window.KindleI18n.locale)),signature=JSON.stringify([values,window.KindleI18n.language]);if(el.dataset.signature!==signature){const old=el.value;el.innerHTML=window.KindleI18n.html('<option value="">'+label+'</option>'+values.map(v=>`<option value="${esc(v)}" data-untranslated>${esc(v==='.'?window.KindleI18n.t('Cartella principale'):v)}</option>`).join(''));el.value=values.includes(old)?old:'';el.dataset.signature=signature;}}}
 function bookCover(f){return `<img class="book-cover" src="${esc(f.cover_url||'/static/cover-placeholder.svg')}" alt="Copertina di ${esc(f.name)}" width="48" height="72" loading="lazy" decoding="async">`;}
+function bookSourceLink(url){
+ return url?`<a class="book-source-link" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Vedi il libro</a>`:'';
+}
+function bookRatingMarkup(book,{placeholder=false}={}){
+ const t=(key,values)=>window.KindleI18n.t(key,values);
+ if(!Number.isFinite(book.rating_value)||book.rating_value<=0)
+  return placeholder?`<span class="small muted">${esc(t('Valutazione non ancora disponibile'))}</span>`:'';
+ const locale=window.KindleI18n.locale;
+ const score=book.rating_value.toLocaleString(locale,{maximumFractionDigits:2});
+ const count=Number.isInteger(book.rating_count)&&book.rating_count>0
+  ?t('{count} valutazioni',{count:book.rating_count.toLocaleString(locale)}):'';
+ const source=book.rating_source||'';
+ const label=[source,count].filter(Boolean).join(' · ');
+ const address=book.rating_url||(source==='Goodreads'?'':book.url);
+ return `<span class="rating-score" aria-label="${esc(t('Valutazione generale: {score} su 5',{score}))}">★ ${esc(score)}<small>/5</small></span>
+  ${address&&/^https?:\/\//i.test(address)?`<a class="rating-source" href="${esc(address)}" target="_blank" rel="noopener noreferrer" data-untranslated>${esc(label)} ↗</a>`
+   :label?`<span class="rating-source" data-untranslated>${esc(label)}</span>`:''}`;
+}
 function bookActions(f,{sendLabel='Invia ora ↗',showReview=true}={}){
  const busy=['queued','sending'].includes(f.status);
  const read=`<button class="secondary" data-read="${f.id}" ${!f.available?'disabled':''}>Leggi</button>`;
@@ -53,45 +71,204 @@ function bookActions(f,{sendLabel='Invia ora ↗',showReview=true}={}){
  if(review&&!showReview)return read;
  return read+`<button class="primary" ${!state.mail_ready?'data-configure-mail':review?'data-go="history"':`data-send="${f.id}"`} ${!f.available||f.sent_at||busy?'disabled':''}>${f.sent_at?'Già inviato':!state.mail_ready?'Configura invio':busy?(f.status==='sending'?'Invio…':'In coda'):review?'Verifica invio':sendLabel}</button>`;
 }
-function fileCard(f,selectable=true){const saved=state.reading_list_files[f.id];return `<article class="card file-card ${selected.has(f.id)?'selected':''}">${bookCover(f)}<div class="file-info"><h3 class="file-title">${esc(f.name)}</h3><p class="file-meta">${esc(f.format)} · ${size(f.size)} · ${esc(f.origin==='upload'?window.KindleI18n.t('Caricato dall’app'):f.folder==='.'?window.KindleI18n.t('Libreria del server'):f.folder)}</p>${badge(f.available?f.status:'failed')}<div class="book-actions">${bookActions(f,{showReview:selectable})}${f.available?readingListButton('file',f.id,saved):''}</div><div class="file-secondary-actions"><details><summary>Dettagli e invio automatico</summary><p>${esc(f.available?(f.detail||(f.sent_at?'Presente nel registro degli invii. La consegna va verificata sul Kindle.':'Puoi leggere il libro o inviarlo subito.')):'File non più disponibile nella libreria.')}</p>${f.sent_at?`<p>Registro SMTP: ${formatDate(f.sent_at,true)}</p>`:''}<label class="check-line"><input type="checkbox" data-automatic="${f.id}" ${f.auto_send?'checked':''}><span>Invia anche in automatico</span></label><p>Disattiva per scegliere tu quando inviarlo. La lettura non avvia invii.</p></details>${selectable?`<button type="button" class="text" data-delete-file="${esc(f.id)}">Elimina</button>`:''}</div></div>${selectable?`<label class="select-box"><span class="sr-only">Seleziona ${esc(f.name)}</span><input type="checkbox" data-select="${f.id}" ${selected.has(f.id)?'checked':''} ${!f.available?'disabled':''}></label>`:''}</article>`;}
+function fileCard(f,selectable=true){const saved=state.reading_list_files[f.id];return `<article class="card file-card ${selected.has(f.id)?'selected':''}">${bookCover(f)}<div class="file-info"><h3 class="file-title">${esc(f.name)}</h3><p class="file-meta">${esc(f.format)} · ${size(f.size)} · ${esc(f.origin==='upload'?window.KindleI18n.t('Caricato dall’app'):f.folder==='.'?window.KindleI18n.t('Libreria del server'):f.folder)}</p>${badge(f.available?f.status:'failed')}${f.rating_value?`<div class="recommendation-rating saved-book-rating">${bookRatingMarkup(f)}</div>`:''}<div class="book-actions">${bookActions(f,{showReview:selectable})}${f.available?readingListButton('file',f.id,saved):''}${f.available&&!state.library_files?.[f.id]?`<button type="button" class="secondary" data-library-file="${esc(f.id)}">Metti in libreria</button>`:''}</div><div class="file-secondary-actions"><details><summary>Dettagli e invio automatico</summary><p>${esc(f.available?(f.detail||(f.sent_at?'Presente nel registro degli invii. La consegna va verificata sul Kindle.':'Puoi leggere il libro o inviarlo subito.')):'File non più disponibile nella libreria.')}</p>${f.sent_at?`<p>Registro SMTP: ${formatDate(f.sent_at,true)}</p>`:''}<label class="check-line"><input type="checkbox" data-automatic="${f.id}" ${f.auto_send?'checked':''}><span>Invia anche in automatico</span></label><p>Disattiva per scegliere tu quando inviarlo. La lettura non avvia invii.</p></details>${selectable?`<button type="button" class="text" data-delete-file="${esc(f.id)}">Elimina</button>`:''}</div></div>${selectable?`<label class="select-box"><span class="sr-only">Seleziona ${esc(f.name)}</span><input type="checkbox" data-select="${f.id}" ${selected.has(f.id)?'checked':''} ${!f.available?'disabled':''}></label>`:''}</article>`;}
+function readingListLabel(saved){return saved?'Rimuovi da Da leggere':'Salva in Da leggere';}
 function readingListButton(source,key,saved){
- return `<button class="secondary" type="button" data-reading-list-source="${source}" data-reading-list-key="${esc(key)}" data-reading-list-id="${esc(saved||'')}">${saved?'Rimuovi da Da leggere':'Salva in Da leggere'}</button>`;
+ return `<button class="secondary" type="button" data-reading-list-source="${source}" data-reading-list-key="${esc(key)}" data-reading-list-id="${esc(saved||'')}">${readingListLabel(saved)}</button>`;
 }
 function savedRecommendation(book,requireSource=false){
  return state?.reading_list.find(entry=>(!requireSource||entry.url)&&(entry.url===book.url||
   (book.reading_isbn&&entry.reading_isbn===book.reading_isbn)||
   (book.reading_key&&entry.reading_key===book.reading_key)))?.id;
 }
-function renderReadingList(){
- const files=new Map(state.files.map(file=>[file.id,file]));
- const saved=state.reading_list;
- const signature=JSON.stringify([saved,saved.map(entry=>files.get(entry.file_id)),state.mail_ready,window.KindleI18n.language]);
- if(signature!==renderReadingList.signature){
-  const focused=document.activeElement;
-  const key=focused?.dataset.readingListKey;
-  const hadFocus=$('#reading-list').contains(focused);
-  $('#reading-list-loading').hidden=true;
-  $('#reading-list').innerHTML=window.KindleI18n.html(saved.map(entry=>{
-   const file=files.get(entry.file_id);
-   const cover=file?.cover_url||entry.cover_url||'/static/cover-placeholder.svg';
-   return `<article class="card file-card"><img class="book-cover" src="${esc(cover)}" alt="" width="48" height="72" loading="lazy" decoding="async"><div class="file-info"><h2 class="file-title" data-untranslated>${esc(entry.title)}</h2>${entry.author?`<p class="small muted" data-untranslated>${esc(entry.author)}</p>`:''}${file?'':`<p class="small muted">${entry.url?'Da scaricare o caricare':'File non più disponibile nella libreria.'}</p>`}<div class="book-actions">${file?bookActions(file,{sendLabel:'Invia al Kindle ↗'}):entry.url?`<button class="primary" type="button" data-saved-download="${entry.id}">Scarica</button><a class="recommendation-link" href="${esc(entry.url)}" target="_blank" rel="noopener noreferrer">Vedi il libro ↗</a>`:''}${readingListButton('remove',entry.id,entry.id)}</div></div></article>`;
-  }).join('')||'<div class="empty"><strong>La lista è vuota.</strong>Salva un titolo dalla Libreria o da Consigliati.</div>');
-  if(hadFocus&&key)($(`#reading-list [data-reading-list-key="${CSS.escape(key)}"]`)||$('#reading-list-heading')).focus();
-  renderReadingList.signature=signature;
+const pendingReadMarks=new Set();
+function savedBook(id){
+ return state?.reading_list.find(book=>book.id===id)||state?.library_books.find(book=>book.id===id);
+}
+function readMarkState(key){
+ const [source,id]=key.split('/');
+ if(source==='files')return state?.files.find(book=>book.id===id);
+ return savedBook(id);
+}
+function readingMarkCheckbox(book,title,source='reading-list'){
+ const key=`${source}/${book.id}`;
+ return `<label class="check-line reading-list-read">
+  <input type="checkbox" data-reading-list-read="${esc(key)}" ${book.is_read?'checked':''} ${pendingReadMarks.has(key)?'disabled':''}>
+  <span>Letto</span><span class="sr-only" data-untranslated>${esc(title)}</span>
+ </label>`;
+}
+function syncReadingMarks(container){
+ for(const checkbox of container.querySelectorAll('[data-reading-list-read]')){
+  const key=checkbox.dataset.readingListRead;
+  if(!pendingReadMarks.has(key))checkbox.checked=Boolean(readMarkState(key)?.is_read);
  }
- const savedSignature=JSON.stringify(saved.map(entry=>[entry.id,entry.url,entry.reading_key,entry.reading_isbn]));
- if(savedSignature!==renderReadingList.savedSignature){
-  renderReadingList.savedSignature=savedSignature;
+}
+function savedBookCover(entry,file){
+ const remote=entry.cover_url||(entry.url&&!entry.url.startsWith('https://www.goodreads.com/book/show/'))
+  ?`/api/reading-list/${entry.id}/cover`:'';
+ const embedded=file?.cover_url;
+ return {src:embedded&&remote?embedded+'&fallback=0':embedded||remote, fallback:embedded&&remote?remote:''};
+}
+function readingTimeline(book,withEdit=false){
+ const t=(label,values)=>window.KindleI18n.t(label,values);
+ const date=value=>value?new Intl.DateTimeFormat(window.KindleI18n.locale,{dateStyle:'medium'}).format(new Date(value*1000)):'';
+ const added=date(book.added_at||book.created),finished=date(book.finished_at);
+ const own=book.is_read&&Number.isFinite(book.personal_rating)?book.personal_rating.toLocaleString(window.KindleI18n.locale):'';
+ const status=own?t('Voto personale {value} su 5',{value:own}):t(book.is_read?'Letto':'Da leggere');
+ return `<dl class="reading-timeline">
+  <div><dt>${esc(t('Stato di lettura'))}</dt><dd>${esc(status)}
+   ${withEdit&&book.is_read?`<button class="text" type="button" data-edit-personal-rating="${esc(book.id)}">${esc(t('Modifica voto'))}</button>`:''}</dd></div>
+  ${added?`<div><dt>${esc(t('Aggiunto il'))}</dt><dd>${esc(added)}</dd></div>`:''}
+  ${finished?`<div><dt>${esc(t('Finito il'))}</dt><dd>${esc(finished)}</dd></div>`:''}
+ </dl>`;
+}
+const ratingDialog=$('#finish-rating-dialog'), ratingSelect=$('#finish-rating-value');
+function askBookRating(book){
+ if(ratingDialog.open)return Promise.resolve(null);
+ const t=key=>window.KindleI18n.t(key);
+ $('#finish-rating-book').textContent=book?.title||book?.name||'';
+ const choices=new Option(t('Scegli un voto'),'');
+ choices.disabled=true;
+ ratingSelect.replaceChildren(choices,...Array.from({length:9},(_,index)=>{
+  const vote=1+index/2;
+  return new Option(vote.toLocaleString(window.KindleI18n.locale),String(vote));
+ }));
+ ratingSelect.value=book?.personal_rating?String(book.personal_rating):'';
+ ratingDialog.returnValue='cancel';
+ return new Promise(resolve=>{
+  ratingDialog.addEventListener('close',()=>{
+   const result=ratingDialog.returnValue;
+   resolve(result==='rated'?{value:Number(ratingSelect.value)}:result==='skip'?{value:null}:null);
+  },{once:true});
+  ratingDialog.showModal();
+ });
+}
+$('#finish-rating-skip').addEventListener('click',()=>ratingDialog.close('skip'));
+window.addEventListener('kindle:account',()=>{if(ratingDialog.open)ratingDialog.close('cancel');});
+
+function savedBookDetails(entry,file,spine,inQueue){
+ const {src,fallback}=savedBookCover(entry,file);
+ return `<article class="shelf-title-card">
+   ${src?`<img class="book-cover shelf-title-image" src="${esc(src)}"
+    ${fallback?`data-cover-fallback="${esc(fallback)}"`:''} alt="" width="84" height="126">`:''}
+   <div class="shelf-title-info">
+    ${entry.author?`<p class="muted" data-untranslated>${esc(entry.author)}</p>`:''}
+    ${bookSourceLink(entry.url)}
+    ${entry.rating_value?`<div class="recommendation-rating saved-book-rating">${bookRatingMarkup(entry)}</div>`:''}
+    ${readingTimeline(entry,true)}
+    ${readingMarkCheckbox(entry,entry.title)}
+    <div class="book-actions">
+     ${file?bookActions(file,{sendLabel:'Invia al Kindle ↗'}):entry.url?`<button class="primary" type="button" data-saved-download="${esc(entry.id)}">Scarica</button>`:''}
+     <button class="secondary" type="button" data-place-book="${esc(entry.id)}">Scegli librerie</button>
+     <button class="secondary" type="button" data-spine-display="${esc(entry.id)}">${spine?.active?'Mostra copertina':'Mostra il dorso'}</button>
+     ${spine?`<button class="secondary" type="button" data-spine-photo="${esc(entry.id)}">Sostituisci foto del dorso</button>`:''}
+     ${inQueue?'':`<button class="secondary" type="button" data-library-queue="${esc(entry.id)}">Salva in Da leggere</button>`}
+     <button class="secondary" type="button" data-library-remove="${esc(entry.id)}">Rimuovi dalla libreria</button>
+    </div>
+   </div>
+  </article>`;
+}
+function renderReadingQueue(saved){
+ const container=$('#reading-queue');
+ const files=new Map(state.files.map(file=>[file.id,file]));
+ const signature=JSON.stringify([saved,saved.map(entry=>files.get(entry.file_id)),
+  state.mail_ready,window.KindleI18n.language]);
+ if(signature!==renderReadingQueue.signature){
+  const focus=container.contains(document.activeElement)?document.activeElement:null;
+  const select=focus?.dataset.readingListRead, action=focus?.dataset.readingListKey;
+  const cards=saved.map(entry=>{
+   const file=files.get(entry.file_id);
+   const {src,fallback}=savedBookCover(entry,file);
+   return `<article class="card file-card">
+    <div class="book-cover-column">
+     <img class="book-cover" src="${esc(src||'/static/cover-placeholder.svg')}"
+      ${fallback?`data-cover-fallback="${esc(fallback)}"`:''} alt="" width="84" height="126" loading="lazy">
+     ${bookSourceLink(entry.url)}
+    </div>
+    <div class="file-info">
+     <h2 class="file-title" data-untranslated>${esc(entry.title)}</h2>
+     ${entry.author?`<p class="small muted" data-untranslated>${esc(entry.author)}</p>`:''}
+     ${!file&&entry.url?'<p class="small muted">Da scaricare o caricare</p>':''}
+     ${entry.rating_value?`<div class="recommendation-rating saved-book-rating">${bookRatingMarkup(entry)}</div>`:''}
+     ${readingTimeline(entry)}
+     ${readingMarkCheckbox(entry,entry.title)}
+     <div class="book-actions">
+      ${file?bookActions(file,{sendLabel:'Invia al Kindle ↗'}):entry.url?`<button class="primary" type="button" data-saved-download="${esc(entry.id)}">Scarica</button>`:''}
+      <button class="secondary" type="button" data-place-book="${esc(entry.id)}">Metti in libreria</button>
+      ${readingListButton('remove',entry.id,entry.id)}
+     </div>
+    </div>
+   </article>`;
+  });
+  container.innerHTML=window.KindleI18n.html(cards.join('')||
+   '<div class="empty"><strong>La lista è vuota.</strong>Salva un titolo da Libreria, Consigliati o Download.</div>');
+  if(select||action){
+   const button=select?container.querySelector(`[data-reading-list-read="${CSS.escape(select)}"]`)
+    :container.querySelector(`[data-reading-list-key="${CSS.escape(action)}"]`);
+   (button||$('#reading-queue-heading')).focus({preventScroll:true});
+  }
+  renderReadingQueue.signature=signature;
+ }
+ syncReadingMarks(container);
+}
+function renderReadingList(){
+ const saved=state.reading_list;
+ $('#reading-list-loading').hidden=true;
+ renderReadingQueue(saved);
+ window.KindleShelves?.render(state);
+ const signature=JSON.stringify(saved.map(entry=>[entry.id,entry.url,entry.reading_key,entry.reading_isbn]));
+ if(signature!==renderReadingList.savedSignature){
+  renderReadingList.savedSignature=signature;
   window.dispatchEvent(new Event('kindle:reading-list'));
  }
 }
+document.addEventListener('change',async event=>{
+ const input=event.target;
+ const key=input.dataset.readingListRead;
+ if(!key||pendingReadMarks.has(key))return;
+ const epoch=window.KindleAccounts.epoch;
+ const hadFocus=document.activeElement===input;
+ const card=input.closest('article');
+ const isRead=input.checked;
+ pendingReadMarks.add(key);
+ input.disabled=true;
+ try{
+  const previous=Boolean(readMarkState(key)?.is_read);
+  let rating;
+  if(isRead&&!previous){
+   input.checked=false;
+   rating=await askBookRating(readMarkState(key));
+   if(!rating||epoch!==window.KindleAccounts.epoch)return;
+  }
+  const result=await api(`/api/${key}/read`,{is_read:isRead,...(rating?{personal_rating:rating.value}:{})});
+  if(refreshTask?.epoch===epoch)await refreshTask.promise;
+  if(epoch!==window.KindleAccounts.epoch)return;
+  const entry=readMarkState(key);
+  if(entry)entry.is_read=result.is_read;
+  await refresh();
+ }catch(error){if(error.name!=='AbortError'&&epoch===window.KindleAccounts.epoch)toast(error.message);}
+ finally{
+  pendingReadMarks.delete(key);
+  if(epoch===window.KindleAccounts.epoch){
+   const selector=`[data-reading-list-read="${CSS.escape(key)}"]`;
+   for(const checkbox of $$(selector)){
+    checkbox.checked=Boolean(readMarkState(key)?.is_read);
+    checkbox.disabled=false;
+   }
+   const checkbox=card?.querySelector(selector)||$(`#page-${page} ${selector}`);
+   if(hadFocus&&checkbox?.closest('.page')?.id===`page-${page}`&&document.activeElement===document.body)checkbox.focus();
+  }
+ }
+});
 let readingListBusy=false;
 document.addEventListener('click',async event=>{
  const button=event.target.closest('[data-reading-list-source]');
  if(!button||readingListBusy)return;
  const {readingListSource:source,readingListKey:key,readingListId:id}=button.dataset;
- const body=id?{remove_id:id}:source==='file'?{file_id:key}:{recommendation_url:key};
+ const field={file:'file_id',recommendation:'recommendation_url',catalogue:'catalogue_id'}[source];
+ const body=id?{remove_id:id}:{[field]:key};
  const epoch=window.KindleAccounts.epoch;
+ const hadFocus=document.activeElement===button;
  readingListBusy=true;
  button.disabled=true;
  try{
@@ -101,12 +278,16 @@ document.addEventListener('click',async event=>{
   await refresh();
   if(epoch===window.KindleAccounts.epoch)toast(id?'Rimosso da Da leggere.':'Salvato in Da leggere.');
  }catch(error){if(error.name!=='AbortError')toast(error.message);}
- finally{readingListBusy=false;button.disabled=false;}
+ finally{
+  readingListBusy=false;
+  button.disabled=false;
+  if(hadFocus&&button.isConnected&&document.activeElement===document.body)button.focus();
+ }
 });
 document.addEventListener('click',event=>{
  const button=event.target.closest('[data-saved-download]');
  if(!button)return;
- const entry=state?.reading_list.find(book=>book.id===button.dataset.savedDownload);
+ const entry=savedBook(button.dataset.savedDownload);
  if(entry)window.dispatchEvent(new CustomEvent('kindle:saved-download',{detail:entry}));
 });
 function renderFiles(){if(!state)return;renderLibraryFilters();const all=visibleFiles();const files=all.slice(0,fileLimit);$('#file-count').textContent=files.length<all.length?window.KindleI18n.t('{shown} di {count} documenti',{shown:files.length,count:all.length}):window.KindleI18n.t(all.length===1?'{count} documento':'{count} documenti',{count:all.length});$('#load-more').hidden=files.length>=all.length;$('#file-list').innerHTML=window.KindleI18n.html(files.map(f=>fileCard(f)).join('')||'<div class="empty"><strong>Nessun documento qui.</strong>Carica un file o cambia ricerca e filtro.</div>');updateSelection();}
@@ -115,7 +296,7 @@ function render(){if(!state)return;$$('.upload-result[data-file-id]').forEach(ro
 let warning=[];if(!d.worker_ok)warning.push('Il worker non risponde: gli invii restano conservati in coda.');if(!d.config_ok)warning.push('Completa la configurazione Kindle nelle impostazioni.');if(!d.library_ok)warning.push('La libreria del server non è disponibile.');if(errors.length)warning.push(errors.length+' tentativi richiedono un controllo in Attività.');$('#health-warning').hidden=!warning.length;$('#health-warning').textContent=window.KindleI18n.t(warning.join(' '));
 renderHomeBooks();renderLibraryCheck();renderReadingList();
 // Keep expanded details and focus stable when a poll returns unchanged lists.
-const fileSignature=JSON.stringify([state.files,state.reading_list_files,state.mail_ready,window.KindleI18n.language]);if(render.fileSignature!==fileSignature){renderFiles();render.fileSignature=fileSignature;}else updateSelection();
+const fileSignature=JSON.stringify([state.files,state.reading_list_files,state.library_files,state.mail_ready,window.KindleI18n.language]);if(render.fileSignature!==fileSignature){renderFiles();render.fileSignature=fileSignature;}else updateSelection();
 const jobSignature=JSON.stringify([state.jobs,window.KindleI18n.language]);if(render.jobSignature!==jobSignature){$('#job-list').innerHTML=window.KindleI18n.html(state.jobs.map(j=>`<article class="card job-card"><div class="job-head">${badge(j.status)}<time class="small muted">${formatDate(j.created)}</time></div><h3 class="file-title">${esc(j.name)}</h3><p class="file-meta">${esc(window.KindleI18n.t(({manual:'Invio manuale',automatic:'Invio automatico',retry:'Nuovo tentativo'})[j.source]||j.source))}</p><p class="job-detail">${esc(j.detail||'Il worker prenderà in carico il documento.')}</p>${j.status==='sending'?'<div class="job-progress" role="progressbar" aria-label="Trasmissione SMTP in corso"></div>':''}${['failed','uncertain'].includes(j.status)?`<button class="secondary" data-retry="${j.id}">${j.status==='uncertain'?'Controlla e riprova':'Riprova invio'}</button>`:''}</article>`).join('')||'<div class="empty"><strong>La tua attività inizia qui.</strong>Gli invii compariranno appena aggiunti alla coda.</div>');render.jobSignature=jobSignature;}
 $('#legacy-list').innerHTML=window.KindleI18n.html(state.legacy.map(j=>`<div class="legacy-item"><span data-untranslated>${esc(j.name)}</span><time>${formatDate(j.sent_at,true)} · Registrato dallo script originale</time></div>`).join(''));$('#config-summary').textContent=window.KindleI18n.t(d.config_ok?'Configurazione completa. Credenziali conservate sul server.':'Configurazione da completare. Campi mancanti o non validi: '+d.missing.map(k=>window.KindleI18n.t(({smtp_user:'utente SMTP',smtp_password:'password SMTP',smtp_host:'server SMTP',smtp_port:'porta SMTP',kindle_address:'indirizzo Kindle',smtp_ssl:'sicurezza TLS'})[k]||k)).join(', '));$('#diagnostics').innerHTML=window.KindleI18n.html([['App web',true],['Worker invii',d.worker_ok],['Database persistente',d.database_ok],['Libreria del server',d.library_ok],['Configurazione',d.config_ok]].map(([label,ok])=>`<div class="diagnostic"><span>${label}</span><span class="pill ${ok?'':'bad'}">${ok?'Pronto':'Da controllare'}</span></div>`).join('')+`<p class="small muted">Ultimo controllo file: ${formatDate(d.last_scan,true)}</p>`);$('#logs').innerHTML=window.KindleI18n.html(state.logs.map(l=>`<div class="log-item"><time>${formatDate(l.created,true)}</time>${esc(l.message)}</div>`).join('')||'<p class="small muted">Nessun evento.</p>');}
 function renderHomeBooks(){
@@ -159,7 +340,7 @@ function refresh(){
  if(refreshTask?.epoch===epoch)return refreshTask.promise;
  const task={epoch};
  task.promise=(async()=>{
-  try{state=await api('/api/state');render();}
+  try{state=await api('/api/state');render();window.dispatchEvent(new Event('kindle:state'));}
   catch(error){if(error.name!=='AbortError'&&epoch===window.KindleAccounts.epoch)setTopStatus('● Connessione assente','error');}
   finally{if(refreshTask===task)refreshTask=null;}
  })();
@@ -223,10 +404,20 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&appStarte
 let appStarted=false;
 window.KindleI18n.ready.then(()=>window.KindleAccounts.start());
 setInterval(()=>{if(!document.hidden&&appStarted&&window.KindleAccounts.active)refresh();},4000);
-window.addEventListener('kindle:account',event=>{appStarted=Boolean(event.detail.user);setTopStatus('Connessione…','checking');$('#toast').hidden=true;state=null;selected.clear();scheduleLoaded=false;csrf='';render.fileSignature=null;render.jobSignature=null;renderReadingList.signature=null;renderReadingList.savedSignature=null;$('#reading-list').replaceChildren();$('#reading-list-loading').hidden=false;renderHomeBooks.waiting=null;renderHomeBooks.recent=null;$('#upload-progress').replaceChildren();$('#upload-progress').hidden=true;$('#config-form').reset();$('#schedule-form').reset();for(const id of ['legacy-list','logs','diagnostics','config-summary','check-result','last-send','next-send','file-count','health-warning'])$('#'+id).replaceChildren();$('#file-input').value='';$('#search').value='';filter='all';fileLimit=30;homePendingLimit=20;$('#job-list').replaceChildren();$('#file-list').replaceChildren();$('#home-queue').replaceChildren();$('#recent-sent').replaceChildren();if(appStarted){go(event.detail.restoreRoute?(location.hash.slice(1)||'home'):'home',false);refresh();}});
+window.addEventListener('kindle:account',event=>{appStarted=Boolean(event.detail.user);setTopStatus('Connessione…','checking');$('#toast').hidden=true;state=null;selected.clear();scheduleLoaded=false;csrf='';render.fileSignature=null;render.jobSignature=null;renderReadingList.savedSignature=null;renderReadingQueue.signature=null;$('#reading-queue').replaceChildren();$('#reading-list').replaceChildren();$('#reading-list-loading').hidden=false;renderHomeBooks.waiting=null;renderHomeBooks.recent=null;$('#upload-progress').replaceChildren();$('#upload-progress').hidden=true;$('#config-form').reset();$('#schedule-form').reset();for(const id of ['legacy-list','logs','diagnostics','config-summary','check-result','last-send','next-send','file-count','health-warning'])$('#'+id).replaceChildren();$('#file-input').value='';$('#search').value='';filter='all';fileLimit=30;homePendingLimit=20;$('#job-list').replaceChildren();$('#file-list').replaceChildren();$('#home-queue').replaceChildren();$('#recent-sent').replaceChildren();if(appStarted){go(event.detail.restoreRoute?(location.hash.slice(1)||'home'):'home',false);refresh();}});
 window.addEventListener('kindle:language',()=>{if(appStarted){render();refresh();}});
 
-document.addEventListener('error',e=>{if(e.target.matches?.('img.book-cover')&&!e.target.dataset.fallback){e.target.dataset.fallback='true';e.target.src='/static/cover-placeholder.svg';}},true);
+document.addEventListener('error',event=>{
+ const image=event.target;
+ if(!image.matches?.('img.book-cover')||image.dataset.fallback)return;
+ if(image.dataset.coverFallback){
+  image.src=image.dataset.coverFallback;
+  delete image.dataset.coverFallback;
+ }else{
+  image.dataset.fallback='true';
+  image.src='/static/cover-placeholder.svg';
+ }
+},true);
 
 async function sendBook(id,button){button.disabled=true;try{const result=await api('/api/send',{ids:[id]});toast(result.results[0]?.status==='accepted'?'Libro già registrato: nessun nuovo invio.':'Invio richiesto subito. Puoi seguirlo in Attività.');await refresh();}catch(e){toast(e.message);}finally{if(button.isConnected)button.disabled=false;}}
 window.sendBook=sendBook;

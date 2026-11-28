@@ -111,7 +111,11 @@ Uploads are limited to **45 MB**. Email providers can impose lower limits, inclu
 
 The first account owns the installation's `library/` folder. Put books there or upload them. Other profiles start empty and can upload private books. Administrators can list account IDs with `docker compose exec app python -m app.account_admin list`; private folders are `data/users/ACCOUNT-ID/library/`.
 
-**To read** is available from Library and Recommended. Save a title from either page to keep it in your account. Saved recommendations can link to books already in your library or to files you add later. Kindle Sync matches EPUB metadata and unambiguous file names. Download a saved recommendation through Telegram, or open or send the linked file directly from the list.
+Use **Bookcase** to arrange books in separate bookcases. Hold a book or object to move it, or select **Rearrange books**. A short press opens the linked file or the book's details. To show a book spine, photograph it or choose an existing photo and crop it. Use **Objects** to add a plant, building bricks, a bookend or your own photo on a stand.
+
+**To read** is a separate list. Save titles from Files, Recommended or Downloads. Kindle Sync links titles to EPUB metadata or unambiguous file names. Open or send a linked file from the list, or download an available edition through Telegram. When marking a book as read, you can give it a personal rating from 1 to 5 in half-point steps. Book details show the date added and the finish date when recorded.
+
+To bring over your Goodreads library, export it as a CSV and choose **Settings → Import from Goodreads**. The import uses your Goodreads shelves, reading status and available dates and ratings. Your personal rating is shown separately from the Goodreads community average.
 
 ## Recommendations and optional Telegram downloads
 

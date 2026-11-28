@@ -114,6 +114,48 @@ def init():
           WHERE status IN ('queued','running');
         CREATE TABLE IF NOT EXISTS reading_list(id TEXT PRIMARY KEY,title TEXT NOT NULL,author TEXT NOT NULL,
           isbn TEXT NOT NULL,url TEXT NOT NULL,cover_url TEXT,file_digest TEXT,created REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS reading_list_details(
+          entry_id TEXT PRIMARY KEY REFERENCES reading_list(id) ON DELETE CASCADE,
+          is_read INTEGER NOT NULL DEFAULT 0 CHECK(is_read IN (0,1)),
+          cover_sources TEXT NOT NULL DEFAULT '[]',cover_checked REAL NOT NULL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS reading_shelves(
+          id TEXT PRIMARY KEY,name TEXT NOT NULL,normalized TEXT NOT NULL UNIQUE);
+        CREATE TABLE IF NOT EXISTS reading_shelf_books(
+          shelf_id TEXT NOT NULL REFERENCES reading_shelves(id) ON DELETE CASCADE,
+          entry_id TEXT NOT NULL REFERENCES reading_list(id) ON DELETE CASCADE,
+          PRIMARY KEY(shelf_id,entry_id));
+        CREATE INDEX IF NOT EXISTS reading_shelf_entry ON reading_shelf_books(entry_id);
+        CREATE TABLE IF NOT EXISTS reading_entry_views(
+          entry_id TEXT PRIMARY KEY REFERENCES reading_list(id) ON DELETE CASCADE,
+          in_library INTEGER NOT NULL CHECK(in_library IN (0,1)),
+          in_queue INTEGER NOT NULL CHECK(in_queue IN (0,1)));
+        CREATE TABLE IF NOT EXISTS reading_shelf_order(
+          case_id TEXT NOT NULL, entry_id TEXT NOT NULL REFERENCES reading_list(id) ON DELETE CASCADE,
+          position INTEGER NOT NULL, PRIMARY KEY(case_id,entry_id));
+        CREATE TABLE IF NOT EXISTS reading_book_spines(
+          entry_id TEXT PRIMARY KEY REFERENCES reading_list(id) ON DELETE CASCADE,
+          image BLOB NOT NULL, revision TEXT NOT NULL, show_spine INTEGER NOT NULL CHECK(show_spine IN (0,1)),
+          height_class INTEGER NOT NULL, width_class INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS reading_goodreads_ratings(
+          entry_id TEXT PRIMARY KEY REFERENCES reading_list(id) ON DELETE CASCADE,
+          score REAL NOT NULL, votes INTEGER, url TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS reading_library_dates(
+          entry_id TEXT PRIMARY KEY REFERENCES reading_list(id) ON DELETE CASCADE, added_at REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS reading_finish(
+          entry_id TEXT PRIMARY KEY REFERENCES reading_list(id) ON DELETE CASCADE,
+          finished_at REAL, rating_half INTEGER CHECK(rating_half BETWEEN 2 AND 10));
+        CREATE TABLE IF NOT EXISTS reading_file_finish(
+          digest TEXT PRIMARY KEY, finished_at REAL,
+          rating_half INTEGER CHECK(rating_half BETWEEN 2 AND 10));
+        CREATE TABLE IF NOT EXISTS reading_shelf_objects(
+          id TEXT PRIMARY KEY,case_id TEXT NOT NULL,name TEXT NOT NULL,kind TEXT NOT NULL,
+          image BLOB NOT NULL,revision TEXT NOT NULL,created REAL NOT NULL);
+        CREATE INDEX IF NOT EXISTS reading_shelf_objects_case ON reading_shelf_objects(case_id);
+        CREATE TABLE IF NOT EXISTS reading_shelf_layout(
+          case_id TEXT NOT NULL,item TEXT NOT NULL,position INTEGER NOT NULL,
+          PRIMARY KEY(case_id,item));
+        CREATE TABLE IF NOT EXISTS reading_file_status(
+          digest TEXT PRIMARY KEY,is_read INTEGER NOT NULL CHECK(is_read IN (0,1)));
         CREATE TABLE IF NOT EXISTS reading_file_metadata(digest TEXT PRIMARY KEY,title TEXT NOT NULL,
           author TEXT NOT NULL,isbn TEXT NOT NULL);
         ''')

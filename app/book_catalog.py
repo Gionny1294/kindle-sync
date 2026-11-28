@@ -10,7 +10,7 @@ import time
 import unicodedata
 from urllib.parse import urlencode
 
-from app import core as c, reading_list, recommendations
+from app import core as c, reading_list, recommendations, goodreads_ratings
 
 
 CATALOGUE = 'https://openlibrary.org'
@@ -294,8 +294,9 @@ def merge_results(rows):
         source_key = row.get('work') or row.get('url')
         if source_key and all(record.get('work') != source_key and record.get('url') != source_key for record in book['records']):
             book['records'].append({field: row[field] for field in ('title','author','url','isbn','work') if field in row})
-        if row.get('rating_value') and (not book['rating'] or (row.get('rating_count') or 0) > (book['rating'].get('rating_count') or 0)):
-            book['rating'] = {field: row.get(field) for field in RATING_KEYS}
+        rating=goodreads_ratings.extract(row) or row
+        if goodreads_ratings.prefer(rating,book['rating']):
+            book['rating']={field:rating.get(field) for field in RATING_KEYS}
     return list(merged.values())
 
 
@@ -328,12 +329,70 @@ def search(query, language, page, author_search=False):
     if not author_search and not isbn:
         matches.sort(key=lambda book: target not in (identity(book['title']), identity(book['title'], book['author']),
                                                       identity(book['author'], book['title'])))
-    return {'books': store_results(matches), 'more': library_more or any(more for _, more in retailers),
+    books, local_more = include_local_books(store_results(matches), matches, query, isbn, page)
+    return {'books': books, 'more': local_more or library_more or any(more for _, more in retailers),
             'author_search': author_search}
+
+
+def match_library_book(book, catalog):
+    for isbn in book['isbns']:
+        if file := catalog.by_isbn.get(reading_list.isbn_key(isbn)):
+            return file
+    lookup = dict(reading_list_book(book), file_digest=None)
+    return catalog.match(lookup, (), allow_title_only=not lookup['author'])
+
+
+def owned_file(book):
+    with contextlib.closing(c.connect()) as db:
+        return match_library_book(book, reading_list.current_catalog(db))
+
+
+def include_local_books(results, books, query, isbn, page):
+    with contextlib.closing(c.connect()) as db:
+        catalog = reading_list.current_catalog(db)
+    matched = set()
+    for result, book in zip(results, books):
+        if file := match_library_book(book, catalog):
+            result['file_id'] = file['id']
+            matched.add(file['id'])
+
+    target = set(words(query))
+    local = []
+    for digest, file in catalog.by_digest.items():
+        meta = catalog.metadata.get(digest, {})
+        name = reading_list.title_of(file['name'])
+        title, author = meta.get('title') or name, meta.get('author', '')
+        if isbn:
+            if isbn != meta.get('isbn'):
+                continue
+        elif not target or not target.issubset(words(f'{title} {author} {name}')):
+            continue
+        local.append({'id': 'local-' + file['id'], 'key': 'file:' + file['id'], 'file_id': file['id'],
+                      'title': title, 'author': author, 'url': '', 'local_only': True,
+                      'cover_url': f"/api/files/{file['id']}/cover" if file['name'].lower().endswith('.epub') else None})
+    local.sort(key=lambda book: identity(book['title'], book['author']) != identity(query))
+    first = (page - 1) * PAGE_SIZE
+    local_page = [book for book in local[first:first + PAGE_SIZE] if book['file_id'] not in matched]
+    return local_page + sorted(results, key=lambda book: not book.get('file_id')), len(local) > first + PAGE_SIZE
 
 
 def catalogue_table(db):
     db.execute('CREATE TABLE IF NOT EXISTS download_catalogue (id TEXT PRIMARY KEY, data TEXT NOT NULL, expires REAL NOT NULL)')
+
+
+def reading_list_book(book):
+    work = next((source['work'] for source in book['records'] if source.get('work')), '')
+    url = CATALOGUE + work if work else next((source['url'] for source in book['records'] if source.get('url')), '')
+    isbn = next(filter(None, map(reading_list.isbn_key, book['isbns'])), '')
+    # Catalogue result tokens expire. Use the existing permanent proxy for Open Library covers.
+    cover_url = None
+    for cover in book['covers']:
+        match = re.fullmatch(r'https://covers\.openlibrary\.org/b/id/([1-9]\d{0,8})-M\.jpg\?default=false', cover)
+        if match:
+            cover_url = f'/api/downloads/covers/{match[1]}'
+            break
+    return {'title': book['title'], 'author': book['author'], 'url': url, 'isbn': isbn,
+            'cover_url': cover_url, 'cover_sources': book['covers'][:3], **book['rating']}
 
 
 def store_results(books):
@@ -344,12 +403,17 @@ def store_results(books):
     with c.transaction() as db:
         catalogue_table(db)
         db.execute('DELETE FROM download_catalogue WHERE expires < ?', (time.time(),))
+        ratings=goodreads_ratings.Ratings(db)
         for book in books:
-            token = secrets.token_hex(16)
-            db.execute('INSERT INTO download_catalogue VALUES (?, ?, ?)', (token, json.dumps(book), expiry))
+            token=secrets.token_hex(16)
+            identity=reading_list_book(book)
+            if rating:=ratings.find(dict(identity,isbns=book['isbns'])):
+                book['rating']=rating
+            db.execute('INSERT INTO download_catalogue VALUES (?, ?, ?)', (token,json.dumps(book),expiry))
+            saved=reading_list_book(book)
             results.append({'id':token, 'key':book['key'], 'title':book['title'], 'author':book['author'],
                             'cover_url':f'/api/downloads/catalogue/{token}/cover' if book['covers'] else None,
-                            **book['rating']})
+                            'url': saved['url'], **reading_list.fingerprint(saved), **book['rating']})
     return results
 
 
@@ -368,6 +432,42 @@ def book_cover(book):
         if path:
             return path
     return None
+
+
+def saved_cover(book):
+    sources = book['cover_sources'].copy()
+    legacy = book['cover_url'] or ''
+    if match := re.fullmatch(r'/api/recommendations/covers/([a-f0-9]{64})', legacy):
+        path = recommendations.cover_path(match[1], allow_cached=True)
+        if path:
+            return path
+    if match := re.fullmatch(r'/api/downloads/covers/([1-9]\d{0,8})', legacy):
+        sources.append(f'https://covers.openlibrary.org/b/id/{match[1]}-M.jpg?default=false')
+    if isbn := reading_list.isbn_key(book['isbn']):
+        sources.append(f'https://covers.openlibrary.org/b/isbn/{isbn}-M.jpg?default=false')
+    for source in dict.fromkeys(sources):
+        path = recommendations.cached_cover(source, 'download-covers')
+        if path:
+            return path
+    if not book['url'] or not reading_list.claim_cover_lookup(book['id']):
+        return None
+    if re.fullmatch(re.escape(CATALOGUE) + r'/works/OL\d+W', book['url']):
+        covers = fetch_json(book['url'] + '.json').get('covers')
+        cover_id = next((cover for cover in covers if type(cover) is int and 0 < cover <= 999999999), None) if isinstance(covers, list) else None
+        source = f'https://covers.openlibrary.org/b/id/{cover_id}-M.jpg?default=false' if cover_id else ''
+    else:
+        try:
+            content, _, base = recommendations.fetch(book['url'])
+            source = recommendations.detail_metadata(content, base, book).get('cover', '')
+        except (OSError, http.client.HTTPException, ValueError):
+            return None
+    if not source or source in sources:
+        return None
+    path = recommendations.cached_cover(source, 'download-covers')
+    if path:
+        with c.transaction() as db:
+            reading_list.remember_covers(db, book['id'], [source])
+    return path
 
 
 def book_details(book):

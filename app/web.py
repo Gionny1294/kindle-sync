@@ -3,6 +3,7 @@ from datetime import datetime
 import hashlib
 import hmac
 import json
+from io import BytesIO
 import os
 from pathlib import Path
 import secrets
@@ -18,7 +19,7 @@ from app.covers import thumbnail
 from app import reader
 from app import i18n
 from app import accounts
-from app import book_catalog, reading_list, recommendations, telegram_books, updates
+from app import book_catalog, goodreads_ratings, reading_list, reading_objects, reading_shelves, reading_spines, recommendations, telegram_books, updates
 
 os.umask(0o077)
 c.init()
@@ -29,7 +30,7 @@ for profile in accounts.profiles():
             if exists:c.init()
 app=Flask(__name__)
 ASSET_VERSION=hashlib.sha256(b''.join(path.read_bytes() for path in
-    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','isbn.js','updates.js','style.css','icon.svg','apple-touch-icon.png','cover-placeholder.svg','vendor/zxing/zxing.min.js']]+
+    [Path(app.static_folder)/name for name in ['i18n.js','accounts.js','reader.js','app.js','recommendations.js','isbn.js','updates.js','reading-shelves.js','shelf-objects.js','spine-crop.js','style.css','shelves-design.css','editorial/bookshelf.webp','editorial/walnut-shelf.webp','editorial/objects/plant.webp','editorial/objects/bricks.webp','editorial/objects/bookend.webp','editorial/literata-latin.woff2','icon.svg','apple-touch-icon.png','cover-placeholder.svg','vendor/zxing/zxing.min.js']]+
     sorted((Path(app.static_folder)/'locales').glob('*.json')))).hexdigest()[:12]
 app.config.update(MAX_CONTENT_LENGTH=46*1024*1024,MAX_FORM_MEMORY_SIZE=128*1024,MAX_FORM_PARTS=12)
 
@@ -220,12 +221,38 @@ def state():
           (SELECT detail FROM jobs WHERE digest=f.digest ORDER BY id DESC LIMIT 1) AS detail,
           (SELECT id FROM jobs WHERE digest=f.digest ORDER BY id DESC LIMIT 1) AS job_id
           FROM files f LEFT JOIN sent s ON s.sha256=f.digest WHERE f.deleted=0 ORDER BY f.created DESC,f.name COLLATE NOCASE''').fetchall()
-        saved_books,saved_files=reading_list.list_state(db,rows)
+        all_saved,_,read_marks=reading_list.list_state(db,rows)
+        rating_index=goodreads_ratings.Ratings(db)
+        rating_by_digest={}
+        digests={row['id']:row['digest'] for row in rows}
+        for book in all_saved:
+            if verified:=rating_index.find(book):
+                book.update(verified)
+                if digest:=digests.get(book['file_id']):
+                    rating_by_digest[digest]=verified
+        library_books,saved_books=reading_list.split_views(db,all_saved)
+        def saved_by_file(books):
+            saved_by_digest={digests[book['file_id']]:book['id'] for book in reversed(books)
+                             if book['file_id'] in digests}
+            return {row['id']:saved_by_digest[row['digest']] for row in rows
+                    if row['available'] and row['digest'] in saved_by_digest}
+        saved_files=saved_by_file(saved_books)
+        library_files=saved_by_file(library_books)
+        personal_shelves=reading_shelves.snapshot(db)
+        unsorted_books=reading_shelves.ordered_ids(db,'')
+        objects,layouts=reading_objects.snapshot(db,personal_shelves,unsorted_books)
+        spines=reading_spines.snapshot(db)
         files=[{k:r[k] for k in ['id','name','size','origin','available','created','sent_at','job_status','detail','job_id','auto_send']} for r in rows]
         for f in files:
             f['status']='accepted' if f['sent_at'] else (f['job_status'] or 'pending')
+        indexed={row['digest']:dict(row) for row in db.execute('SELECT * FROM reading_file_metadata')}
+        file_completion=reading_list.file_completion(db)
         for f,r in zip(files,rows):
+            matches=rating_by_digest.get(r['digest']) or rating_index.find(indexed.get(r['digest'],{}))
+            f.update(matches)
             f['cover_url']=cover_url(r)
+            f['is_read']=read_marks.get(r['digest'],False)
+            f.update(file_completion.get(r['digest'],{}) if f['is_read'] else {})
             f['delete_download']=bool(manage_downloads and r['available'] and shared_download_path(r))
             try:
                 if r['origin']=='download':
@@ -252,7 +279,8 @@ def state():
         last=db.execute('SELECT max(sent_at) FROM sent').fetchone()[0]
         logs=[dict(r) for r in db.execute('SELECT created,message FROM events ORDER BY id DESC LIMIT 60')]
     cfg=c.config()
-    return jsonify(account=public_account(g.account),setup_required=settings.get('setup_complete')!='1',mail_ready=settings.get('mail_verified')=='1' and not c.config_errors(),files=files,jobs=jobs,legacy=legacy,last_sent=last,logs=logs,recent_sent=recent,reading_list=saved_books,reading_list_files=saved_files,
+    return jsonify(account=public_account(g.account),setup_required=settings.get('setup_complete')!='1',mail_ready=settings.get('mail_verified')=='1' and not c.config_errors(),files=files,jobs=jobs,legacy=legacy,last_sent=last,logs=logs,recent_sent=recent,reading_list=saved_books,reading_list_files=saved_files,reading_shelves=personal_shelves,library_books=library_books,library_files=library_files,
+       library_unsorted=unsorted_books,library_spines=spines,library_objects=objects,library_layouts=layouts,
        library_check=dict(library_check) if library_check else None,
        schedule={'paused':settings['paused']=='1','interval_minutes':int(settings['interval_minutes']),'next_run':float(settings['next_run'])},
        diagnostics={'worker_ok':time.time()-float(settings['heartbeat'])<180,'last_scan':float(settings['scan']),
@@ -263,8 +291,79 @@ def state():
 
 @app.post('/api/reading-list')
 def update_reading_list():
-    reading_list.update(request.get_json())
+    body = request.get_json()
+    catalogue = None
+    if 'catalogue_id' in body:
+        result = book_catalog.get_book(body['catalogue_id'])
+        if result:
+            catalogue = book_catalog.reading_list_book(result)
+    reading_list.update(body, catalogue_book=catalogue)
     return jsonify(ok=True)
+
+
+@app.post('/api/reading-shelves')
+def update_reading_shelves():
+    return jsonify(reading_shelves.change(request.get_json()))
+
+
+@app.post('/api/reading-shelves/goodreads')
+def import_reading_shelves():
+    return jsonify(reading_shelves.import_goodreads(request.get_json()))
+
+
+@app.get('/api/reading-shelves/<entry_id>/spine')
+def reading_spine_image(entry_id):
+    content=reading_spines.get_photo(entry_id)
+    if content is None:
+        return fail('Foto del dorso non disponibile.',404)
+    return send_file(BytesIO(content),mimetype='image/webp')
+
+
+@app.post('/api/reading-shelves/<entry_id>/spine')
+def update_reading_spine(entry_id):
+    return jsonify(reading_spines.set_display(entry_id,request.get_json()))
+
+
+@app.post('/api/shelf-objects')
+def update_shelf_objects():
+    return jsonify(reading_objects.save(request.get_json()))
+
+
+@app.get('/api/shelf-objects/<identifier>/photo')
+def shelf_object_photo(identifier):
+    data=reading_objects.photo_data(identifier)
+    if data is None:
+        return fail('Foto non disponibile.',404)
+    return send_file(BytesIO(data),mimetype='image/webp')
+
+
+@app.post('/api/reading-list/<entry_id>/read')
+def mark_reading_list_book(entry_id):
+    body = request.get_json()
+    if set(body)-{'is_read','personal_rating'} or not isinstance(body.get('is_read'),bool):
+        return fail('Richiesta non valida.')
+    if not reading_list.set_read(entry_id,body['is_read'],body.get('personal_rating')):
+        return fail('Libro non presente in Da leggere.', 404)
+    return jsonify(is_read=body['is_read'])
+
+
+@app.post('/api/files/<file_id>/read')
+def mark_library_book(file_id):
+    body = request.get_json()
+    if set(body)-{'is_read','personal_rating'} or not isinstance(body.get('is_read'),bool):
+        return fail('Richiesta non valida.')
+    if not reading_list.set_file_read(file_id,body['is_read'],body.get('personal_rating')):
+        return fail('Libro non disponibile.', 404)
+    return jsonify(is_read=body['is_read'])
+
+
+@app.get('/api/reading-list/<entry_id>/cover')
+def reading_list_cover(entry_id):
+    book = reading_list.cover_info(entry_id)
+    path = book_catalog.saved_cover(book) if book and book['url'] else None
+    if path:
+        return send_file(path, conditional=True)
+    return fail('Copertina non disponibile.', 404)
 
 
 def cover_url(row,id_key='id'):
@@ -282,6 +381,8 @@ def file_cover(file_id):
         path=thumbnail(row)
     except (ValueError,OSError):
         path=None
+    if not path and request.args.get('fallback') == '0':
+        return fail('Copertina non disponibile.', 404)
     return send_file(path or Path(app.static_folder)/'cover-placeholder.svg',conditional=True)
 
 
@@ -661,6 +762,8 @@ def download_catalogue_details():
 def search_catalogue_edition():
     book=book_catalog.get_book(request.get_json().get('id'))
     if not book:return fail('Libro non disponibile.',404)
+    if file := book_catalog.owned_file(book):
+        return jsonify(file_id=file['id'],options=[])
     return jsonify(telegram_books.search(catalogue_book=book))
 
 

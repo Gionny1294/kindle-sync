@@ -2,11 +2,11 @@
 <html lang="it">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#173f39"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#202e25"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="description" content="La tua libreria, pronta per il Kindle.">
 <link rel="manifest" href="/manifest.webmanifest?v={{ assets_version }}"><link rel="icon" href="/static/icon.svg?v={{ assets_version }}" type="image/svg+xml"><link rel="apple-touch-icon" href="/static/apple-touch-icon.png?v={{ assets_version }}">
-<link rel="stylesheet" href="/static/style.css?v={{ assets_version }}"><script src="/static/i18n.js?v={{ assets_version }}" defer></script><script src="/static/accounts.js?v={{ assets_version }}" defer></script><script src="/static/reader.js?v={{ assets_version }}" defer></script><script src="/static/app.js?v={{ assets_version }}" defer></script>
-<script src="/static/recommendations.js?v={{ assets_version }}" defer></script><script src="/static/isbn.js?v={{ assets_version }}" defer></script><script src="/static/updates.js?v={{ assets_version }}" defer></script>
+<link rel="stylesheet" href="/static/style.css?v={{ assets_version }}"><link rel="stylesheet" href="/static/shelves-design.css?v={{ assets_version }}"><script src="/static/i18n.js?v={{ assets_version }}" defer></script><script src="/static/accounts.js?v={{ assets_version }}" defer></script><script src="/static/reader.js?v={{ assets_version }}" defer></script><script src="/static/app.js?v={{ assets_version }}" defer></script>
+<script src="/static/recommendations.js?v={{ assets_version }}" defer></script><script src="/static/isbn.js?v={{ assets_version }}" defer></script><script src="/static/reading-shelves.js?v={{ assets_version }}" defer></script><script src="/static/shelf-objects.js?v={{ assets_version }}" defer></script><script src="/static/spine-crop.js?v={{ assets_version }}" defer></script><script src="/static/updates.js?v={{ assets_version }}" defer></script>
 <title>Kindle · La tua libreria</title>
 </head>
 <body class="language-pending account-pending">
@@ -40,7 +40,8 @@
  <div class="page-heading"><h1>Home</h1></div>
  <div class="home-overview">
   <article class="home-actions">
-   <div><h2 id="hero-title">La libreria si sta preparando.</h2><p id="hero-note">Controllo del servizio in corso.</p></div>
+   <img class="home-book-photo" src="/static/editorial/bookshelf.webp" alt="" width="990" height="743" fetchpriority="high">
+   <div class="home-summary"><h2 id="hero-title">La libreria si sta preparando.</h2><p id="hero-note">Controllo del servizio in corso.</p></div>
    <div class="home-buttons">
     <button id="home-send" class="light">Controlla e invia ora ↗</button>
     <button id="check-library" class="home-secondary" aria-describedby="scan-help">↻ Controlla cartella ora</button>
@@ -64,7 +65,7 @@
  <article class="card discover-teaser"><h2>Scopri i Consigliati</h2><button class="secondary" data-go="recommended">Esplora →</button></article>
 </section>
 <section id="page-files" class="page" hidden>
- <div class="page-heading heading-actions"><h1>La libreria</h1><button class="secondary" type="button" data-go="reading-list">Da leggere</button></div>
+ <div class="page-heading heading-actions"><h1>La libreria</h1><button class="secondary" type="button" data-go="bookcases">Libreria</button></div>
  <div class="card library-search">
  <label class="search"><span>Cerca nella cartella dei libri</span><input id="search" type="search" placeholder="Titolo, nome del file o sottocartella…" autocomplete="off" enterkeyhint="search"></label>
  <div class="library-filters"><label>Cartella<select id="folder-filter"><option value="">Tutte le cartelle</option></select></label><label>Formato<select id="format-filter"><option value="">Tutti i formati</option></select></label><button id="files-refresh" class="secondary">↻ Aggiorna cartella</button></div>
@@ -82,23 +83,48 @@
  <div id="selection-bar" class="selection-bar" hidden><div><strong id="selection-count">0 selezionati</strong><button id="clear-selection" class="text">Deseleziona</button></div><div class="button-row"><button id="delete-selected" class="danger" aria-label="Elimina file selezionati">Elimina</button><button id="send-selected" class="primary">Invia ora ↗</button></div></div>
 </section>
 <section id="page-reading-list" class="page" hidden>
- <div class="page-heading heading-actions"><h1 id="reading-list-heading" tabindex="-1">Da leggere</h1><div class="button-row"><button class="secondary" type="button" data-go="files">La libreria</button><button class="secondary" type="button" data-go="recommended">Consigliati</button></div></div>
+ <div class="page-heading heading-actions">
+  <h1 id="reading-queue-heading" tabindex="-1">Da leggere</h1>
+  <button class="secondary" type="button" data-go="bookcases">Vai alla libreria</button>
+ </div>
+ <div id="reading-queue" class="stack"></div>
+</section>
+<section id="page-bookcases" class="page" hidden>
+ <div class="page-heading heading-actions"><h1 id="reading-list-heading" tabindex="-1">La mia libreria</h1>
+  <button id="shelves-add-book" class="primary" type="button">{{ ui_icon('M12 5v14M5 12h14') }}<span>Aggiungi libro</span></button>
+ </div>
+ <div class="shelves-toolbar">
+  <div class="shelves-actions">
+   <label class="shelves-picker"><span>Libreria</span><select id="shelves-select"><option value="">Tutte le librerie</option></select></label>
+   <button id="shelves-add" class="secondary" type="button">Nuova libreria</button>
+   <button id="shelves-edit" class="secondary" type="button" hidden>Modifica libreria</button>
+   <button id="shelves-arrange" class="secondary" type="button" aria-pressed="false">Sposta libri</button>
+  </div>
+  <div class="shelves-filters">
+   <div class="filter-row" role="group" aria-label="Stato di lettura">
+    <button class="filter active" type="button" data-shelf-status="all" aria-pressed="true">Tutti</button>
+    <button class="filter" type="button" data-shelf-status="unread" aria-pressed="false">Da leggere</button>
+    <button class="filter" type="button" data-shelf-status="read" aria-pressed="false">Letti</button>
+   </div>
+   <label class="shelves-search"><span class="sr-only">Cerca titolo o autore</span>{{ ui_icon('M15 15l5 5M17 11a6 6 0 1 1-12 0 6 6 0 0 1 12 0Z') }}<input id="shelves-search" type="search" placeholder="Cerca titolo o autore" autocomplete="off"></label>
+  </div>
+ </div>
+ <p id="shelves-arrange-help" class="small muted" hidden>Tieni premuto e trascina tra i ripiani. Puoi usare le frecce su un elemento selezionato.</p>
  <p id="reading-list-loading" class="small muted" role="status">Caricamento della lista…</p>
- <div id="reading-list" class="stack"></div>
+ <div id="reading-list" class="bookcases"></div>
+ <button id="shelves-more" class="secondary full" type="button" hidden>Mostra altri libri</button>
 </section>
 <section id="page-recommended" class="page" hidden>
  <div class="page-heading"><h1>Consigliati</h1></div>
- <div class="recommendation-toolbar">
-  <div class="recommendation-toolbar-actions">
-   <button class="secondary" type="button" data-go="reading-list">Da leggere</button>
-   <button id="recommendation-refresh" class="secondary" type="button">↻ Aggiorna ora</button>
-   <button class="secondary" type="button" data-go="downloads">Cerca altri libri →</button>
-   <button id="recommendation-settings" class="secondary" type="button">Fonti ⚙</button>
-  </div>
-  <p id="recommendation-schedule" class="small muted">Scansione ogni 6 ore · Europe/Rome</p>
- </div>
+ <p id="recommendation-schedule" class="small muted">Scansione ogni 6 ore · Europe/Rome</p>
  <p id="recommendation-status" class="notice" role="status" aria-live="polite" hidden></p>
- <div class="filter-row recommendation-tabs" role="group" aria-label="Filtra i consigliati"><button class="filter active" data-recommendation-category="new" aria-pressed="true">Novità</button><button class="filter" data-recommendation-category="charts" aria-pressed="false">Classifica generale</button></div>
+ <div class="recommendation-controls">
+  <div class="recommendation-tabs" role="group" aria-label="Filtra i consigliati">
+   <button class="filter active" type="button" data-recommendation-category="new" aria-pressed="true">Novità</button>
+   <button class="filter" type="button" data-recommendation-category="charts" aria-pressed="false">Classifica</button>
+  </div>
+  <button id="recommendation-refresh" type="button" aria-label="Aggiorna consigliati">{{ ui_icon('M20 11a8 8 0 1 0-2.4 6.6M20 5v6h-6') }}</button>
+ </div>
  <p id="recommendation-count" class="small muted"></p><div id="recommendation-books" class="recommendation-grid"></div>
 </section>
 <section id="page-downloads" class="page" hidden>
@@ -142,6 +168,7 @@
  <nav class="settings-index" aria-labelledby="settings-heading">
   <button type="button" class="secondary" data-settings-target="settings-account">Account</button>
   <button type="button" class="secondary" data-settings-target="settings-kindle">Kindle e posta</button>
+  <button type="button" class="secondary" data-settings-target="settings-library">La libreria</button>
   <button type="button" class="secondary" data-settings-target="settings-downloads">Download</button>
   <button type="button" class="secondary" data-settings-target="settings-sources">Fonti</button>
   <button type="button" class="secondary" data-settings-target="settings-language">Lingua</button>
@@ -163,6 +190,14 @@
  <button class="primary" type="submit">Salva impostazioni</button></form><button id="check-config" class="secondary">Verifica connessione SMTP</button><p id="check-result" class="small" role="status"></p>
  </article>
  <details class="card"><summary>Come collegare il Kindle</summary><p>In Amazon, apri Gestisci contenuti e dispositivi → Preferenze → Impostazioni documenti personali. Trova l’indirizzo Send to Kindle e autorizza l’e-mail del mittente.</p><p>Per Gmail usa una password per app e l’autenticazione a due fattori. Server smtp.gmail.com, porta 465 e TLS diretto.</p><p>Per aggiungere questa app alla schermata Home, usa la funzione del browser per creare un collegamento.</p></details>
+ </div>
+ <div id="settings-library" class="settings-group" tabindex="-1">
+  <article class="card stack">
+   <h2>La libreria</h2>
+   <div class="button-row">
+    <button id="shelves-import" class="secondary" type="button">{{ ui_icon('M12 4v11m-4-4 4 4 4-4M5 16v4h14v-4') }}<span>Importa da Goodreads</span></button>
+   </div>
+  </article>
  </div>
  <div id="settings-downloads" class="settings-group" tabindex="-1">
   <h2 class="settings-section-title">Download</h2>
@@ -197,12 +232,14 @@
  <button data-go="files">{{ ui_icon('M7 3.5h9.5L20 7v13.5H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2ZM16 3.5V8h4M8.5 11.5h8M8.5 15.5h8') }}File</button>
  <button data-go="recommended">{{ ui_icon('M11 3.5c.8 4.5 2.5 6.2 7 7-4.5.8-6.2 2.5-7 7-.8-4.5-2.5-6.2-7-7 4.5-.8 6.2-2.5 7-7ZM19 14.5v5M16.5 17h5') }}Consigliati</button>
  <button data-go="downloads">{{ ui_icon('M12 3.5v12m-4-4 4 4 4-4M4.5 15v4.5a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1V15') }}Download</button>
+ <button data-go="bookcases">{{ ui_icon('M6 20.5v-16a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v16l-6-4-6 4Z') }}Libreria</button>
+ <button data-go="reading-list">{{ ui_icon('M5 4.5h14v15H5zm3.5 4h7m-7 3.5h7m-7 3.5h4') }}Da leggere</button>
  <button data-go="settings">{{ ui_icon('M4.5 7h15m-15 5h15m-15 5h15M9 5v4m6 1v4m-5 1v4') }}Impostazioni</button>
 </nav>
 </div>
 <dialog id="download-dialog" class="download-dialog"><div class="section-heading"><h2>Scarica libri</h2><button id="download-close" class="secondary" aria-label="Chiudi">×</button></div><p id="download-title" data-untranslated></p><p id="download-status" class="notice" role="status" aria-live="polite"></p><p class="small"><a id="download-bot-link" href="https://t.me/" target="_blank" rel="noopener noreferrer">Apri il bot su Telegram ↗</a></p></dialog>
 <section id="reader-view" class="reader-view" aria-label="Lettore libri" hidden>
- <header class="reader-header"><button id="reader-close" class="reader-icon" aria-label="Chiudi il libro e torna alla libreria">←</button><div class="reader-heading"><h1 id="reader-title">Apertura libro…</h1><p id="reader-section-label"></p></div><button id="reader-contents-toggle" class="reader-icon" aria-label="Indice e vai alla pagina" aria-controls="reader-contents" aria-expanded="false">☷</button><button id="reader-settings-toggle" class="reader-icon reader-aa" aria-label="Aspetto della pagina" aria-controls="reader-settings" aria-expanded="false">Aa</button></header>
+ <header class="reader-header"><button id="reader-close" class="reader-icon" aria-label="Chiudi il libro e torna alla libreria">←</button><div class="reader-heading"><h1 id="reader-title">Apertura libro…</h1><p id="reader-section-label"></p></div><button id="reader-book-details" class="reader-icon" type="button" aria-label="Scheda libro" hidden>{{ ui_icon('M12 10v6m0-9h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z') }}</button><button id="reader-contents-toggle" class="reader-icon" aria-label="Indice e vai alla pagina" aria-controls="reader-contents" aria-expanded="false">☷</button><button id="reader-settings-toggle" class="reader-icon reader-aa" aria-label="Aspetto della pagina" aria-controls="reader-settings" aria-expanded="false">Aa</button></header>
  <aside id="reader-contents" class="reader-panel" aria-label="Indice e pagine" hidden><div class="reader-panel-heading"><h2>Il tuo libro</h2><button class="reader-icon" data-close-reader-panel aria-label="Chiudi indice">×</button></div><label>Indice<select id="reader-toc" aria-label="Indice del libro"></select></label><form id="reader-jump"><label>Vai alla pagina<input id="reader-page-number" type="number" min="1" inputmode="numeric" required></label><button id="reader-jump-button" class="primary">Vai →</button></form><p id="reader-count-note" class="small muted"></p></aside>
  <aside id="reader-settings" class="reader-panel" aria-label="Aspetto della pagina" hidden><div class="reader-panel-heading"><h2>Come vuoi leggere?</h2><button class="reader-icon" data-close-reader-panel aria-label="Chiudi aspetto">×</button></div><div class="reader-size-controls"><span>Dimensione <strong id="reader-size-label">20 px</strong></span><button id="reader-smaller" class="secondary" aria-label="Riduci testo o zoom">A−</button><button id="reader-larger" class="secondary" aria-label="Ingrandisci testo o zoom">A+</button></div><label>Carattere<select id="reader-font"><option value="serif">Libro · con grazie</option><option value="sans">Semplice · senza grazie</option></select></label><label>Interlinea<select id="reader-leading"><option value="1.5">Compatta</option><option value="1.7">Comoda</option><option value="1.9">Ampia</option></select></label><button id="reader-theme" class="secondary">☾ Tema chiaro</button><p class="small muted">Le pagine si adattano allo schermo e al testo. La posizione di lettura viene conservata.</p><button id="reader-send" class="secondary">Invia al Kindle ↗</button></aside>
  <div id="reader-scroll" class="reader-scroll" tabindex="0" aria-label="Contenuto del libro"><p id="reader-status" class="notice" role="status">Apertura del libro… La prima conversione può richiedere un minuto.</p><div id="reader-paper" class="reader-paper" hidden><div id="reader-window" class="reader-window"><article id="reader-content" class="reader-content" hidden></article></div></div><div id="reader-pdf" class="reader-pdf" hidden><canvas id="reader-canvas" aria-label="Pagina PDF"></canvas><pre id="reader-pdf-text" class="sr-only"></pre></div></div>
@@ -211,4 +248,122 @@
 </section>
 <dialog id="account-delete-panel" aria-labelledby="account-delete-title"><form id="account-delete-form" class="stack"><h2 id="account-delete-title">Elimina account</h2><p id="account-delete-target" class="muted" data-untranslated></p><p>Eliminazione definitiva di account, caricamenti, impostazioni e cronologia. Gli invii in coda saranno annullati. I libri originali nella cartella della libreria saranno conservati.</p><label id="account-delete-password-label">Password attuale<input id="account-delete-password" type="password" autocomplete="current-password" maxlength="256"></label><p id="account-delete-error" class="error-text" role="alert" hidden></p><button id="account-delete-submit" class="danger" type="submit">Elimina definitivamente l’account</button><button id="account-delete-cancel" class="secondary" type="button" autofocus>Annulla</button></form></dialog>
 <dialog id="confirm-dialog"><form method="dialog" class="stack"><p class="eyebrow">PRIMA DI CONTINUARE</p><h2 id="confirm-title"></h2><p id="confirm-message"></p><div class="stack"><button id="confirm-ok" class="primary" value="ok">Conferma</button><button class="secondary" value="cancel" autofocus>Annulla</button></div></form></dialog>
+<dialog id="shelves-edit-dialog" aria-labelledby="shelves-edit-title">
+ <form id="shelves-edit-form" class="stack">
+  <div class="section-heading"><h2 id="shelves-edit-title">Nuova libreria</h2><button type="button" class="secondary shelves-close" aria-label="Chiudi">×</button></div>
+  <label>Nome della libreria<input name="name" required maxlength="80" autofocus></label>
+  <p class="error-text" role="alert" hidden></p>
+  <div class="button-row"><button id="shelves-remove" class="danger" type="button" hidden>Elimina libreria</button><button class="primary" type="submit">Salva libreria</button></div>
+ </form>
+</dialog>
+<dialog id="shelves-book-dialog" aria-labelledby="shelves-book-title">
+ <form id="shelves-book-form" class="stack">
+  <div class="section-heading"><h2 id="shelves-book-title">Aggiungi libro</h2><button type="button" class="secondary shelves-close" aria-label="Chiudi">×</button></div>
+  <div id="shelves-book-fields" class="stack">
+   <label>Titolo del libro<input name="title" required maxlength="500"></label>
+   <label>Autore<input name="author" maxlength="500"></label>
+   <label>Stato di lettura<select name="status"><option value="unread">Da leggere</option><option value="read">Letto</option></select></label>
+  </div>
+  <p id="shelves-book-name" class="muted" data-untranslated hidden></p>
+  <fieldset class="shelf-membership"><legend>Librerie</legend><div id="shelves-book-options"></div></fieldset>
+  <p class="error-text" role="alert" hidden></p>
+  <button class="primary" type="submit">Salva libro</button>
+ </form>
+</dialog>
+<dialog id="shelves-import-dialog" aria-labelledby="shelves-import-title">
+ <form id="shelves-import-form" class="stack">
+  <div class="section-heading"><h2 id="shelves-import-title">Importa da Goodreads</h2><button type="button" class="secondary shelves-close" aria-label="Chiudi">×</button></div>
+  <p class="small muted">Esporta la libreria Goodreads e seleziona il file CSV. Verranno importati gli scaffali personalizzati e lo stato di lettura.</p>
+  <a class="small" href="https://www.goodreads.com/review/import" target="_blank" rel="noopener noreferrer">Esporta libreria su Goodreads ↗</a>
+  <label>File CSV di Goodreads<input id="shelves-csv" type="file" accept=".csv,text/csv" required></label>
+  <p id="shelves-import-summary" class="notice" role="status" hidden></p>
+  <p class="error-text" role="alert" hidden></p>
+  <button id="shelves-import-confirm" class="primary" type="submit" disabled>Importa libri</button>
+ </form>
+</dialog>
+<dialog id="shelf-title-dialog" aria-labelledby="shelf-title-heading">
+ <div class="section-heading"><h2 id="shelf-title-heading" data-untranslated></h2><button type="button" class="secondary shelves-close" aria-label="Chiudi">×</button></div>
+ <div id="shelf-title-content"></div>
+</dialog>
+<template id="bookcase-template">
+ <section class="bookcase">
+  <div class="bookcase-heading">
+   <div class="bookcase-label"><h2></h2><p class="bookcase-count"></p></div>
+   <div class="bookcase-tools">
+    <button type="button" class="secondary bookcase-object">{{ ui_icon('M3 6h18v13H3zM7 15l3-3 3 2 4-4 2 3') }}<span>Oggetti</span></button>
+    <button type="button" class="secondary bookcase-add">{{ ui_icon('M12 5v14M5 12h14') }}</button>
+   </div>
+  </div>
+  <div class="bookcase-frame"><ul class="bookcase-levels"></ul></div>
+ </section>
+</template>
+<template id="shelf-volume-template">
+ <li class="shelf-volume">
+  <button class="shelf-volume-button" type="button">
+   <span class="shelf-volume-cover" aria-hidden="true">
+    <span class="shelf-volume-lettering"><span class="shelf-volume-title"></span></span>
+    <img class="book-cover shelf-volume-image" alt="" width="102" height="151" loading="lazy" decoding="async" hidden>
+   </span>
+   <span class="sr-only"></span>
+  </button>
+  <button class="shelf-volume-mark" type="button" hidden>{{ ui_icon('m6 12 4 4 8-8') }}</button>
+ </li>
+</template>
+<dialog id="spine-crop-dialog" aria-labelledby="spine-crop-heading">
+ <form id="spine-crop-form" class="stack">
+  <div class="section-heading"><h2 id="spine-crop-heading">Fotografa il dorso</h2><button id="spine-cancel" type="button" class="secondary shelves-close" aria-label="Chiudi">×</button></div>
+  <label>Scatta o seleziona una foto<input id="spine-file" type="file" accept="image/*" capture="environment"></label>
+  <div id="spine-crop-work" class="stack" hidden>
+   <p class="small muted">Sposta il riquadro e trascina gli angoli per ritagliare solo il dorso.</p>
+   <canvas id="spine-canvas" tabindex="0" aria-label="Ritaglio del dorso"></canvas>
+   <details class="spine-sliders"><summary>Misure del ritaglio</summary>
+    <div class="form-pair">
+     <label>Larghezza<input type="range" data-crop="w" min="3" max="100"></label>
+     <label>Altezza<input type="range" data-crop="h" min="5" max="100"></label>
+     <label>Posizione orizzontale<input type="range" data-crop="x" min="0" max="100"></label>
+     <label>Posizione verticale<input type="range" data-crop="y" min="0" max="100"></label>
+    </div>
+   </details>
+  </div>
+  <p class="error-text" id="spine-error" role="alert" hidden></p>
+  <button id="spine-save" class="primary" type="submit" disabled>Salva il dorso</button>
+ </form>
+</dialog>
+<dialog id="finish-rating-dialog" aria-labelledby="finish-rating-title">
+ <form id="finish-rating-form" method="dialog" class="stack">
+  <div class="section-heading"><h2 id="finish-rating-title">Che voto gli dai?</h2><button type="button" class="secondary shelves-close" aria-label="Chiudi">×</button></div>
+  <p id="finish-rating-book" class="muted" data-untranslated></p>
+  <label>Il tuo voto<select id="finish-rating-value" required autofocus></select></label>
+  <div class="button-row">
+   <button id="finish-rating-skip" class="secondary" type="button">Salta il voto</button>
+   <button class="primary" type="submit" value="rated">Salva voto</button>
+  </div>
+ </form>
+</dialog>
+<dialog id="shelf-object-dialog" aria-labelledby="shelf-object-heading">
+ <form id="shelf-object-form" class="stack">
+  <div class="section-heading"><h2 id="shelf-object-heading">Oggetti sul ripiano</h2><button type="button" class="secondary shelves-close" aria-label="Chiudi">×</button></div>
+  <div id="shelf-object-options" class="object-options" role="group" aria-label="Oggetti già pronti">
+   <button type="button" class="secondary" data-object-kind="plant"><img src="/static/editorial/objects/plant.webp" alt="" width="62" height="62"><span>Pianta</span></button>
+   <button type="button" class="secondary" data-object-kind="bricks"><img src="/static/editorial/objects/bricks.webp" alt="" width="62" height="62"><span>Costruzione in mattoncini</span></button>
+   <button type="button" class="secondary" data-object-kind="bookend"><img src="/static/editorial/objects/bookend.webp" alt="" width="62" height="62"><span>Fermalibri</span></button>
+  </div>
+  <label>Foto su stand<input id="shelf-photo-file" type="file" accept="image/*"></label>
+  <p class="error-text" role="alert" hidden></p>
+  <button type="submit" class="primary" disabled>Esponi foto</button>
+ </form>
+</dialog>
+<dialog id="shelf-object-details" aria-labelledby="object-details-heading">
+ <div class="section-heading"><h2 id="object-details-heading" data-untranslated></h2><button type="button" class="secondary shelves-close" aria-label="Chiudi">×</button></div>
+ <img id="object-details-image" alt="">
+ <button id="object-details-remove" type="button" class="danger">Rimuovi dal ripiano</button>
+</dialog>
+<template id="shelf-object-template">
+ <li class="shelf-volume shelf-decor">
+  <button class="shelf-volume-button shelf-decor-button" type="button">
+   <span class="shelf-decor-image" aria-hidden="true"><img alt="" width="104" height="104" loading="lazy"></span>
+   <span class="sr-only"></span>
+  </button>
+ </li>
+</template>
 </body></html>

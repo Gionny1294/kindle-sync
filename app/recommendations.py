@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 import html5lib
 from PIL import Image
-from app import core as c, accounts
+from app import core as c, goodreads_ratings, accounts
 from app.covers import parse_xml
 
 CATEGORIES=('new','charts','popular')
@@ -526,13 +526,14 @@ def identity_groups(books):
     return {key:root(key) for key in parents}
 
 
-def snapshot():
+def snapshot(*, include_cover_source=False):
     now=time.time()
     with c.transaction() as db:
         initialize(db)
         sources=read_json(db,'recommendation_sources',[]);cache=read_json(db,'recommendation_cache',{})
         busy=read_json(db,'recommendation_busy',0)>now
         due=read_json(db,'recommendation_next',next_run())
+        rating_index=goodreads_ratings.Ratings(db,cache)
     books={};reports=[]
     aliases=identity_groups(book for source in sources if source['enabled'] for book in cache.get(source['id'],{}).get('books',[]))
     today=datetime.fromtimestamp(now,ROME).date()
@@ -547,9 +548,13 @@ def snapshot():
             key=aliases['title:'+book_identity(book)]
             item=books.setdefault(key,{**{k:v for k,v in book.items() if k!='cover'},'categories':[],'sources':[],
                 '_scores':{'new':{},'charts':{}},'_new_publication':None,'cover_url':None})
-            if not item.get('cover_url') and book.get('cover'):item['cover_url']='/api/recommendations/covers/'+hashlib.sha256(book['cover'].encode()).hexdigest()
-            if book.get('rating_value') is not None and (item.get('rating_value') is None or (book.get('rating_count') or 0)>(item.get('rating_count') or 0)):
-                for field in ('rating','rating_value','rating_count','rating_source','rating_url'):item[field]=book.get(field)
+            if not item.get('cover_url') and book.get('cover'):
+                item['cover_url']='/api/recommendations/covers/'+hashlib.sha256(book['cover'].encode()).hexdigest()
+                if include_cover_source:item['cover_sources']=[book['cover']]
+            candidate=goodreads_ratings.extract(book) or book
+            if goodreads_ratings.prefer(candidate,item):
+                for field in ('rating',*goodreads_ratings.RATING_KEYS):
+                    item[field]=candidate.get(field) or book.get(field)
             if len(book.get('published',''))>len(item.get('published','')):
                 for field in ('published','published_source','published_url'):item[field]=book.get(field)
             if category=='new':
@@ -574,6 +579,9 @@ def snapshot():
             item=selected.setdefault(key,{**{k:v for k,v in book.items() if k not in ('_scores','_new_publication')},'categories':[],'ranks':{}})
             if category=='new':item.update(book['_new_publication'])
             item['categories'].append(category);item['ranks'][category]=rank
+    for book in selected.values():
+        if verified:=rating_index.find(book):
+            book.update(verified)
     return dict(books=list(selected.values()),sources=reports,refreshing=busy,next_run=due,timezone='Europe/Rome',limits=limits)
 
 
@@ -667,8 +675,11 @@ def start_refresh(account,scheduled=False):
     return True
 
 
-def cover_path(digest):
+def cover_path(digest, *, allow_cached=False):
     if not re.fullmatch('[a-f0-9]{64}',digest):return None
+    if allow_cached:
+        path=c.data_dir()/'recommendation-covers'/(digest+'.webp')
+        if path.is_file():return path
     with contextlib.closing(c.connect()) as db:
         sources=read_json(db,'recommendation_sources',[]);cache=read_json(db,'recommendation_cache',{})
     remote=None
